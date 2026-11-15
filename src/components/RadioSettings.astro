@@ -5,16 +5,16 @@ interface Props { channel: Channel }
 const { channel } = Astro.props;
 const settings = radioSettings(channel.id);
 const canEdit = Astro.locals.user?.role === 'admin';
-const recent = settings && Date.now() - settings.updated_at < 30_000;
+const recent = settings && Date.now() - settings.updated_at < 10 * 60_000;
 const states: Record<string,string> = {
   connecting: 'Conectando con la radio',
-  recording: 'Grabando',
-  reconnecting: 'Reconectando',
+  recording: 'Grabación activa',
+  reconnecting: 'Reintentando la fuente',
   disk_full: 'Pausada por falta de espacio',
-  waiting: 'Esperando al grabador',
+  waiting: 'Grabador listo',
 };
 const state = !channel.enabled ? 'Canal desactivado' : !settings?.recording ? 'Grabación desactivada' :
-  (recent && states[settings.state]) || states.waiting;
+  (recent && states[settings.state]) || states[settings.state] || states.waiting;
 const saved = Astro.url.searchParams.get('saved') === '1';
 const error = Astro.url.searchParams.get('error');
 ---
@@ -33,7 +33,7 @@ const error = Astro.url.searchParams.get('error');
       <button class="button primary" type="submit">Guardar configuración</button>
     </form>}
     {!canEdit && <p class="hint">Un administrador puede configurar la fuente y la publicación de este canal.</p>}
-    <p class="hint">Opus a 82 kb/s. El archivo conserva hoy y los cuatro días anteriores, con cortes cada hora de Chile continental.</p>
+    <p class="hint">Opus a 82 kb/s. Conserva hoy y los cuatro días anteriores, con cortes cada 5 minutos de Chile continental.</p>
     {settings?.published === 1 && channel.enabled === 1 &&
       <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta</a>}
   </div>

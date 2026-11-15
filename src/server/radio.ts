@@ -21,8 +21,8 @@ export function radioSettings(id: string) {
 
 export function publicRadio(id: string | undefined) {
   if (!id || !channelPattern.test(id)) return;
-  return db.prepare(`SELECT c.id,c.name FROM channels c JOIN radio_channels r ON r.channel_id=c.id
-    WHERE c.id=? AND c.enabled=1 AND r.published=1`).get(id) as { id: string; name: string } | undefined;
+  return db.prepare(`SELECT c.id,c.name,r.source_url FROM channels c JOIN radio_channels r ON r.channel_id=c.id
+    WHERE c.id=? AND c.enabled=1 AND r.published=1`).get(id) as { id: string; name: string; source_url: string } | undefined;
 }
 
 export function radioDate(timestamp: number) {

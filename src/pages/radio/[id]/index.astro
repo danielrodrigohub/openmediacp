@@ -39,15 +39,23 @@ const radioPath = `/radio/${channel.id}/`;
     <div class="page-heading">
       <div><h1>{channel.name}</h1><p>Radio a la carta</p></div>
     </div>
+    <section class="card live-card">
+      <div class="card-heading"><h2>En directo</h2><span class="hint">Buffer automático</span></div>
+      <div class="card-body live-body">
+        <p class="live-note">Escucha la señal con unos segundos de margen. Si retrocedes, cambia a la grabación Opus disponible.</p>
+        <audio id="radio-live" controls preload="auto" src={channel.source_url}></audio>
+        <button id="radio-live-return" class="button" type="button" hidden>Volver al directo</button>
+      </div>
+    </section>
     <section class="card">
-      <div class="card-heading"><h2>Grabaciones</h2><span class="hint">Hora de Chile continental</span></div>
+      <div class="card-heading"><h2>Grabaciones</h2><span class="hint">Cortes cada 5 minutos · hora de Chile continental</span></div>
       <div class="card-body">
         <nav class="radio-days" aria-label="Fecha de la grabación">
           {days.map((day, index) => <a href={`${radioPath}?fecha=${day}`} aria-label={index === 0 ? 'Hoy, ' + dateLabel(day) : dateLabel(day)} aria-current={day === date ? 'page' : undefined} class:list={['button', day === date ? 'primary' : '']}>{index === 0 ? 'Hoy' : shortDate.format(calendarDay(day))}</a>)}
         </nav>
         <h3>{dateLabel(date)}</h3>
         {selections.length ? <>
-          <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="none" src={radioPath + selections[0].name}></audio>
+          <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="metadata" src={radioPath + selections[0].name}></audio>
           <p id="radio-selection" class="hint" aria-live="polite">{timeRange(selections[0].start, selections[0].end)}</p>
           <ul class="radio-hours">
             {selections.map((item, index) => <li><button type="button" class="button" data-radio-audio={radioPath + item.name} data-radio-time={timeRange(item.start, item.end)} aria-pressed={index === 0 ? 'true' : 'false'}><Icon name="play" size={18}/>{timeRange(item.start, item.end)}</button></li>)}
@@ -58,6 +66,8 @@ const radioPath = `/radio/${channel.id}/`;
     </section>
   </main>
   <script>
+    const live = document.querySelector<HTMLAudioElement>('#radio-live');
+    const liveReturn = document.querySelector<HTMLButtonElement>('#radio-live-return');
     const audio = document.querySelector<HTMLAudioElement>('#radio-audio');
     const selection = document.querySelector<HTMLElement>('#radio-selection');
     const error = document.querySelector<HTMLElement>('#radio-error');
@@ -73,12 +83,19 @@ const radioPath = `/radio/${channel.id}/`;
       error.hidden = true;
       selection.textContent = button.dataset.radioTime || '';
       audio.src = button.dataset.radioAudio || '';
+      live?.pause();
+      if (liveReturn) liveReturn.hidden = false;
       void audio.play().catch(() => {
         if (active === index && audio.error) error.hidden = false;
       });
     }
 
     choices.forEach((button, index) => button.addEventListener('click', () => play(index)));
+    liveReturn?.addEventListener('click', () => {
+      audio?.pause();
+      if (live) { live.load(); void live.play().catch(() => {}); }
+      liveReturn.hidden = true;
+    });
     audio?.addEventListener('error', () => { if (error) error.hidden = false; });
     audio?.addEventListener('ended', () => { if (active + 1 < choices.length) play(active + 1); });
   </script>
@@ -86,10 +103,14 @@ const radioPath = `/radio/${channel.id}/`;
 </html>
 <style>
 .radio-page { width: min(100%, 1040px); margin: 0 auto; padding: 24px 16px; }
+.live-card { margin-block-end: 18px; }
+.live-body { display: grid; gap: 12px; }
+.live-note { margin: 0; color: var(--muted, #52637d); }
 .radio-days, .radio-hours { display: flex; flex-wrap: wrap; gap: 8px; }
 .radio-days a { white-space: nowrap; }
 .radio-page h3 { margin: 18px 0 12px; }
 .radio-hours { list-style: none; padding: 0; }
 .radio-hours button[aria-pressed="true"] { border-color: var(--primary, #2459C4); }
 audio { display: block; width: min(100%, 600px); }
+.radio-hours button { min-width: 112px; justify-content: center; }
 </style>

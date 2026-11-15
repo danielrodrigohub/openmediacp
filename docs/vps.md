@@ -66,7 +66,7 @@ La programación por calendario no está implementada en 0.3; se admite playlist
 
 En el panel, selecciona un canal y abre **Contenido → Radio a la carta**. Como administrador, pega la URL HTTP o HTTPS de una señal de audio de confianza y activa **Grabar continuamente**. Para permitir el acceso sin sesión, activa **Publicar la página de Radio a la carta** y comparte el enlace del canal. La URL de origen queda en el panel. La página y los audios se sirven con instrucciones de no indexación.
 
-El servicio `radio` lee la fuente continua con FFmpeg y almacena Ogg/Opus a 82 kb/s en el mismo volumen persistente del panel. Corta al cambio de hora y publica cada tramo al cerrarlo. Si se interrumpe la fuente, reintenta y conserva los tramos recuperables. El archivo usa la hora de Chile continental y elimina automáticamente los registros anteriores a hoy y los cuatro días anteriores. Calcula alrededor de **4,5 GB por canal** con grabación continua durante cinco días.
+El servicio `radio` lee la fuente continua con FFmpeg y almacena Ogg/Opus a 82 kb/s en el mismo volumen persistente del panel. Corta cada cinco minutos y publica cada tramo al cerrarlo. Si se interrumpe la fuente, reintenta y conserva los tramos recuperables. El archivo usa la hora de Chile continental y elimina automáticamente los registros anteriores a hoy y los cuatro días anteriores. Calcula alrededor de **4,5 GB por canal** con grabación continua durante cinco días.
 
 Para una instalación existente, reemplaza el código con el paquete actualizado conservando `.env`, los certificados y el volumen de datos. Desde el directorio de instalación, ejecuta `docker compose build app` y luego `docker compose up -d app radio`. Para revisar el servicio, usa `docker compose logs --tail=100 radio`.
 
