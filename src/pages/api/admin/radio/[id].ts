@@ -3,6 +3,15 @@ import { audit, db } from '../../../../server/db';
 import { InputError } from '../../../../server/http';
 import { channelPattern } from '../../../../server/radio';
 
+export const GET: APIRoute = async ({ params, locals, redirect }) => {
+  if (locals.user?.role !== 'admin') return new Response(null, { status: 403 });
+  const id = params.id ?? '';
+  if (!channelPattern.test(id) || !db.prepare('SELECT 1 FROM channels WHERE id=?').get(id)) {
+    return new Response('Canal no disponible.', { status: 404 });
+  }
+  return redirect(`/cliente/radio/?channel=${id}`, 303);
+};
+
 export const POST: APIRoute = async ({ params, request, locals, redirect }) => {
   if (locals.user?.role !== 'admin') return new Response(null, { status: 403 });
   const id = params.id ?? '';
