@@ -1,46 +1,30 @@
 import type { APIRoute } from 'astro';
 import { audit, db } from '../../../../server/db';
-import { InputError } from '../../../../server/http';
+import { InputError, apiError, jsonBody } from '../../../../server/http';
 import { channelPattern } from '../../../../server/radio';
 
+const exists = (id: string) => channelPattern.test(id) && !!db.prepare('SELECT 1 FROM channels WHERE id=?').get(id);
+
+// Direct visits (refresh, bookmarked URL) go back to the settings page instead of a 404.
 export const GET: APIRoute = async ({ params, locals, redirect }) => {
   if (locals.user?.role !== 'admin') return new Response(null, { status: 403 });
   const id = params.id ?? '';
-  if (!channelPattern.test(id) || !db.prepare('SELECT 1 FROM channels WHERE id=?').get(id)) {
-    return new Response('Canal no disponible.', { status: 404 });
-  }
+  if (!exists(id)) return new Response('Canal no disponible.', { status: 404 });
   return redirect(`/cliente/radio/?channel=${id}`, 303);
 };
 
-export const POST: APIRoute = async ({ params, request, locals, redirect }) => {
-  if (locals.user?.role !== 'admin') return new Response(null, { status: 403 });
-  const id = params.id ?? '';
-  if (!channelPattern.test(id) || !db.prepare('SELECT 1 FROM channels WHERE id=?').get(id)) {
-    return new Response('Canal no disponible.', { status: 404 });
-  }
-  const destination = `/cliente/radio/?channel=${id}`;
+// Saved via fetch + JSON (same pattern as the rest of the panel). A classic HTML form POST
+// is sent with "Origin: null" because of Referrer-Policy: no-referrer, and the CSRF check rejects it.
+export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
-    if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded')) {
-      throw new InputError('Formulario no válido.');
-    }
-    const reader = request.body?.getReader();
-    if (!reader) throw new InputError('Formulario vacío.');
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 8192) {
-        await reader.cancel();
-        throw new InputError('Formulario demasiado grande.');
-      }
-      chunks.push(value);
-    }
-    const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
-    const source = (form.get('source') ?? '').trim();
-    const recording = Number(form.get('recording') === 'on');
-    const published = Number(form.get('published') === 'on');
+    if (locals.user?.role !== 'admin') return Response.json({ error: 'No tienes acceso.' }, { status: 403 });
+    const id = params.id ?? '';
+    if (!exists(id)) return Response.json({ error: 'Canal no disponible.' }, { status: 404 });
+    const body = await jsonBody(request);
+    const source = (typeof body.source === 'string' ? body.source : '').trim();
+    const on = (value: unknown) => value === 'on' || value === true || value === '1';
+    const recording = Number(on(body.recording));
+    const published = Number(on(body.published));
     if (source) {
       let url: URL | undefined;
       try { url = new URL(source); } catch {}
@@ -59,9 +43,8 @@ export const POST: APIRoute = async ({ params, request, locals, redirect }) => {
       updated_at=CASE WHEN radio_channels.source_url<>excluded.source_url OR radio_channels.recording<>excluded.recording
                       THEN 0 ELSE radio_channels.updated_at END`).run(id, source, recording, published);
     audit(locals.user.id, 'radio_settings_updated', id);
-    return redirect(destination + '&saved=1', 303);
+    return Response.json({ message: 'Configuración de Radio a la carta guardada.' });
   } catch (error) {
-    if (error instanceof InputError) return redirect(destination + '&error=' + encodeURIComponent(error.message), 303);
-    throw error;
+    return apiError(error);
   }
 };

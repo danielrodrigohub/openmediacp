@@ -23,12 +23,13 @@ const error = Astro.url.searchParams.get('error');
   <div class="card-body">
     {saved && <p role="status">Configuración guardada.</p>}
     {error && <p role="alert">{error}</p>}
-    {canEdit && <form method="POST" action={`/api/admin/radio/${channel.id}`}>
+    {canEdit && <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
       <label for="radio-source">URL del audio en directo</label>
       <input id="radio-source" name="source" type="url" maxlength="2048" autocomplete="off" spellcheck="false" value={settings?.source_url || ''} aria-describedby="radio-source-help"/>
       <p id="radio-source-help" class="hint">Pega la URL HTTP o HTTPS del stream de audio de la radio.</p>
       <label class="radio-check"><input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>Grabar continuamente</label>
       <label class="radio-check"><input type="checkbox" name="published" checked={Boolean(settings?.published)}/>Publicar la página de Radio a la carta</label>
+      <div data-form-result role="status" aria-live="polite"></div>
       <button class="button primary" type="submit">Guardar configuración</button>
     </form>}
     {!canEdit && <p class="hint">Un administrador puede configurar la fuente y la publicación de este canal.</p>}
