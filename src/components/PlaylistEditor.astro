@@ -1,0 +1,57 @@
+---
+import Icon from './Icon.astro';
+import {mediaDuration,mediaTitle,type MediaAsset} from '../lib/media';
+import type {AutoDJ} from '../server/playlist';
+interface Props{assets:(MediaAsset&{available:boolean})[];selected:string[];policy:AutoDJ;channel:string;revision:string;add:string[]}
+const {assets,selected,policy,channel,revision,add}=Astro.props;
+const groups=new Map<string,typeof assets>();
+for(const asset of assets){
+ const group=groups.get(asset.folder);
+ if(group)group.push(asset);else groups.set(asset.folder,[asset]);
+}
+const folders=[...groups.keys()].sort((a,b)=>Number(!a)-Number(!b)||a.localeCompare(b,'es'));
+const boot={assets,selected,policy,channel,revision,add};
+---
+<div class="signal-strip"><Icon name="info" size={20}/><strong>Fuente de respaldo · AutoDJ</strong><span>La entrada en vivo tiene prioridad cuando está disponible.</span></div>
+<form class="playlist-editor" data-playlist-editor data-config={JSON.stringify(boot)} data-tab="playlist">
+<div class="mobile-editor-tabs" role="tablist" aria-label="Editor de playlist"><button class="button" type="button" role="tab" data-editor-tab="library" aria-selected="false">Biblioteca</button><button class="button" type="button" role="tab" data-editor-tab="playlist" aria-selected="true">Mi playlist <span data-mobile-playlist-count>{selected.length}</span></button></div>
+<div class="editor-columns"><section class="card" data-editor-library><div class="card-heading"><h2>Biblioteca</h2><a class="text-link" href={`/cliente/archivos/?channel=${channel}`}>Ver biblioteca <Icon name="external" size={16}/></a></div><div class="editor-tools"><label class="search-field"><Icon name="search" size={17}/><input type="search" data-catalog-search placeholder="Buscar videos" aria-label="Buscar videos para la playlist"/></label><select class="select-field" data-catalog-folder aria-label="Filtrar carpeta"><option value="all">Todas las carpetas</option>{folders.map(f=><option value={`folder:${f}`}>{f||'Carpeta principal'}</option>)}</select></div><div class="asset-catalog">{folders.map(f=><div class="catalog-group" data-catalog-group={f}><div class="catalog-folder-heading"><details open={!f} data-folder-details><summary draggable={!!f} data-drag-folder={f||undefined}><Icon name="folder" size={18}/><strong>{f||'Carpeta principal'}</strong><span class="badge gray">{groups.get(f)!.length}</span></summary></details>{f&&<button type="button" class="icon-button" data-add-folder={f} aria-label={`Añadir carpeta ${f} al azar`} title="Añadir carpeta al azar"><Icon name="plus" size={20}/></button>}</div><div class="catalog-folder-files">{groups.get(f)!.map(a=><div class="catalog-row" draggable={a.available} data-catalog-id={a.id}><span class="media-thumb"><Icon name="video" size={22}/></span><span class="file-info"><strong title={a.name}>{mediaTitle(a.name)}</strong><small><Icon name="folder" size={15}/>{a.folder||'Carpeta principal'}</small>{!a.available&&<small class="red">Archivo no disponible</small>}</span><button class="icon-button" type="button" data-editor-action="add" data-id={a.id} disabled={!a.available} aria-label={`Añadir ${a.name}`}><Icon name="plus" size={21}/></button></div>)}</div></div>)}<p class="empty-search" data-catalog-empty hidden>No se encontraron videos.</p>{!assets.length&&<p class="hint">No hay videos en la biblioteca. <a class="text-link" href={`/cliente/archivos/?channel=${channel}`}>Subir videos</a></p>}</div><p class="editor-note">Arrastra una carpeta para añadirla como grupo o arrastra un video para añadirlo por separado.</p></section>
+<section class="card" data-editor-playlist><div class="card-heading"><h2>Mi playlist</h2><span class="badge gray" data-playlist-total>{selected.length} videos</span></div><ol class="playlist-items" data-playlist-items aria-label="Orden de videos de respaldo"></ol><p class="empty-search" data-playlist-empty hidden>Arrastra aquí una carpeta o añade videos desde la biblioteca.</p><p class="editor-note"><Icon name="info" size={18}/><span data-order-note>El orden puede variar si activas el modo aleatorio.</span></p><p class="editor-note" data-duration-summary></p></section></div>
+<section class="card">
+ <div class="card-heading"><h2>Reproducción de la playlist</h2></div>
+ <div class="playback-options">
+  <label>Orden de reproducción<select class="select-field" name="mode"><option value="ordered" selected={!policy.shuffle}>En el orden de la lista</option><option value="random" selected={policy.shuffle}>Aleatorio</option></select></label>
+  <label class="check-label"><input type="checkbox" name="reshuffle" checked={policy.reshuffle}/>Volver a barajar al terminar la lista</label>
+ </div>
+</section>
+<section class="card separator-settings">
+ <div class="card-heading"><h2>Separadores entre videos</h2><button class="button outline small" type="button" data-choose-separators><Icon name="folder" size={17}/>Elegir carpetas o videos</button></div>
+ <div class="card-body">
+  <p class="hint">Se intercala un separador después de la cantidad de videos que indiques. Si eliges varios, se turnan en el orden de selección.</p>
+  <label class="separator-interval">Insertar un separador cada <span class="interval-field"><input type="number" name="every" min="0" max="100" value={policy.every}/><span>videos</span></span></label>
+  <p class="hint">Usa 0 para desactivar los separadores.</p>
+  <strong>Selección actual</strong>
+  <p class="hint" data-separator-empty>Sin carpetas ni videos seleccionados.</p>
+  <div class="separator-chips" data-separator-chips></div>
+ </div>
+</section>
+<div class="save-bar"><div class="save-state" aria-live="polite"><span class="dirty-dot"></span><span data-save-state>Sin cambios pendientes</span></div><div data-form-result role="status" aria-live="polite"></div><div class="button-row"><button class="button outline" type="button" data-discard-playlist>Descartar cambios</button><button class="button primary" type="submit" data-save-playlist>Guardar playlist</button></div></div>
+<dialog class="dialog" data-separator-dialog aria-labelledby="separator-dialog-title">
+ <div class="card-heading"><h2 id="separator-dialog-title">Elegir separadores</h2><button type="button" class="icon-button bare" data-cancel-separators aria-label="Cerrar"><Icon name="close"/></button></div>
+ <div class="card-body">
+  <p class="hint">Marca una carpeta para usar todos sus videos disponibles, o despliega la carpeta y elige archivos individuales.</p>
+  <div class="separator-picker-list">{folders.map(path=>{
+   const files=groups.get(path)!;
+   const count=files.filter(asset=>asset.available).length;
+   return <div class="separator-picker-group">
+    {path&&<label class="separator-folder-choice"><input type="checkbox" value={path} data-separator-folder disabled={!count} aria-label={`Seleccionar carpeta ${path}`}/><Icon name="folder" size={19}/><span><strong>{path}</strong><small>{count} {count===1?'video disponible':'videos disponibles'}</small></span></label>}
+    <details open={!path}><summary>{path?'Ver videos de la carpeta':'Videos de la carpeta principal'}</summary>
+     {files.map(asset=><label><input type="checkbox" value={asset.id} data-separator-option disabled={!asset.available}/><span>{mediaTitle(asset.name)}<small>{mediaDuration(asset.duration)}</small></span></label>)}
+    </details>
+   </div>;
+  })}</div>
+ </div>
+ <div class="form-footer"><span class="hint" data-separator-picking role="status"></span><button type="button" class="button" data-cancel-separators>Cancelar</button><button type="button" class="button primary" data-apply-separators>Aplicar selección</button></div>
+</dialog>
+<template data-playlist-row><li class="playlist-row" draggable="true"><button class="drag-handle" type="button" aria-label="Arrastrar para ordenar"><Icon name="grip" size={19}/></button><span class="order-number"></span><span class="media-thumb" data-entry-video><Icon name="video" size={21}/></span><span class="media-thumb" data-entry-folder hidden><Icon name="folder" size={21}/></span><div class="file-info"><strong></strong><small></small><details class="playlist-folder-members" hidden><summary>Ver videos</summary><ul></ul></details></div><span class="row-actions"><button class="icon-button" type="button" data-editor-action="up"><Icon name="up" size={18}/></button><button class="icon-button" type="button" data-editor-action="down"><Icon name="down" size={18}/></button><button class="icon-button" type="button" data-editor-action="remove"><Icon name="close" size={18}/></button></span></li></template>
+</form><script>import '../scripts/playlist-editor';</script>

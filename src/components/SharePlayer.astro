@@ -1,0 +1,31 @@
+---
+import Icon from './Icon.astro';
+import {origin,type Channel} from '../server/config';
+interface Props {channel:Channel}
+const {channel}=Astro.props;
+const publicUrl=new URL('/ver/'+channel.id,origin).href;
+const embedUrl=new URL('/embed/'+channel.id,origin).href;
+const code=`<iframe src="${embedUrl}" title="Reproductor de STREAMCHILENO.CL" width="640" height="360" style="width:100%;height:auto;aspect-ratio:16/9;border:0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+const local=['localhost','127.0.0.1','[::1]'].includes(new URL(origin).hostname);
+---
+<section class="card">
+ <div class="card-heading"><h2>Compartir reproductor</h2><span class:list={['badge',channel.public_player?'green':'gray']}>{channel.public_player?'Habilitado':'Deshabilitado'}</span></div>
+ <div class="card-body form-fields">
+  <p class="hint">Comparte una página que abre sin iniciar sesión o inserta el reproductor en otro sitio web.</p>
+  {local&&<p class="hint">Entorno local. Estos enlaces funcionan en el equipo donde está instalado el panel.</p>}
+  {channel.public_player&&<>
+   <label for="share-public-url">Página pública</label>
+   <div class="copy-field"><input id="share-public-url" readonly value={publicUrl}/><button class="copy-button" type="button" data-copy="share-public-url">Copiar enlace</button></div>
+   <a class="text-link" href={publicUrl} target="_blank" rel="noopener">Abrir página pública <Icon name="external" size={16}/></a>
+   <label for="share-embed-code">Código iframe</label>
+   <textarea id="share-embed-code" class="field-input mono" readonly rows="3">{code}</textarea>
+   <div class="button-row"><button class="button outline" type="button" data-copy="share-embed-code">Copiar iframe</button><a class="text-link" href={embedUrl} target="_blank" rel="noopener">Ver reproductor <Icon name="external" size={16}/></a></div>
+  </>}
+  <form data-api-form={`/api/channels/${channel.id}`} data-reload>
+   <input type="hidden" name="action" value="public-player"/>
+   <input type="hidden" name="enabled" value={channel.public_player?'0':'1'}/>
+   <button type="submit" class:list={['button',channel.public_player?'outline':'primary']}>{channel.public_player?'Deshabilitar página e iframe':'Habilitar página e iframe'}</button>
+   <p data-form-result role="status"></p>
+  </form>
+ </div>
+</section>

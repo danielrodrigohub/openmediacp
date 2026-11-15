@@ -1,0 +1,40 @@
+---
+import type {Channel} from '../server/config';
+import type {SignalSnapshot} from '../server/signal';
+interface Props {channel:Channel;output:SignalSnapshot['output']}
+const {channel,output}=Astro.props;
+---
+<form class="card card-body channel-controls" data-channel-controls data-channel={channel.id}>
+ <div class="channel-state"><strong>Control de emisión</strong><span class="badge gray">{channel.enabled?'Canal habilitado':output==='absent'?'Salida detenida':'Canal deshabilitado'}</span></div>
+ <div class="button-row">
+  <button class="button primary small" type="submit" name="action" value="start" disabled={!!channel.enabled}>Iniciar</button>
+  <button class="button outline small" type="submit" name="action" value="stop" disabled={!channel.enabled&&output==='absent'} data-confirm="¿Detener la salida pública de este canal? Se interrumpirá la reproducción.">Detener</button>
+  <button class="button small" type="submit" name="action" value="restart" disabled={!channel.enabled} data-confirm="¿Reiniciar la salida pública de este canal? Se interrumpirá la reproducción unos segundos.">Reiniciar</button>
+ </div>
+ <p class="hint">Estos controles operan la salida del canal. La transmisión desde OBS se controla en OBS.</p>
+ <p data-form-result role="status" aria-live="polite"></p>
+</form>
+<script>
+ const form=document.querySelector<HTMLFormElement>('[data-channel-controls]');
+ form?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const button=event.submitter as HTMLButtonElement|null;
+  if(!button||form.dataset.busy)return;
+  if(button.dataset.confirm&&!window.confirm(button.dataset.confirm))return;
+  form.dataset.busy='true';
+  const buttons=[...form.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+  buttons.forEach(b=>b.disabled=true);
+  const result=form.querySelector<HTMLElement>('[data-form-result]')!;
+  result.textContent='Aplicando cambio…';result.classList.remove('error');
+  try{
+   const r=await fetch(`/api/channels/${form.dataset.channel}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:button.value})});
+   const data=await r.json();
+   if(!r.ok)throw new Error(data.error||'No se pudo cambiar la emisión.');
+   try{sessionStorage.setItem('om-form-success',data.message);}catch{}
+   location.reload();
+  }catch(error){
+   result.textContent=error instanceof Error?error.message:'No se pudo cambiar la emisión.';
+   result.classList.add('error');buttons.forEach(b=>b.disabled=false);delete form.dataset.busy;
+  }
+ });
+</script>

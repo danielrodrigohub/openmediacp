@@ -1,0 +1,7 @@
+---
+import '@fontsource/montserrat/latin-900.css';
+import Icon from './Icon.astro';
+interface Props {href?:string}
+const {href='/'}=Astro.props;
+---
+<a class="brand broadcast-brand" href={href} aria-label="OpenBroadcast Panel by STREAMCHILENO.CL"><span class="brand-icon"><Icon name="broadcast" size={26}/></span><span class="brand-wordmark"><span class="brand-name">OpenBroadcast</span><span class="brand-signature"><strong>Panel</strong><span>by STREAMCHILENO.CL</span></span></span></a>

@@ -1,0 +1,45 @@
+---
+import { radioSettings } from '../server/radio';
+import type { Channel } from '../server/config';
+interface Props { channel: Channel }
+const { channel } = Astro.props;
+const settings = radioSettings(channel.id);
+const canEdit = Astro.locals.user?.role === 'admin';
+const recent = settings && Date.now() - settings.updated_at < 30_000;
+const states: Record<string,string> = {
+  connecting: 'Conectando con la radio',
+  recording: 'Grabando',
+  reconnecting: 'Reconectando',
+  disk_full: 'Pausada por falta de espacio',
+  waiting: 'Esperando al grabador',
+};
+const state = !channel.enabled ? 'Canal desactivado' : !settings?.recording ? 'Grabación desactivada' :
+  (recent && states[settings.state]) || states.waiting;
+const saved = Astro.url.searchParams.get('saved') === '1';
+const error = Astro.url.searchParams.get('error');
+---
+<section class="card radio-settings">
+  <div class="card-heading"><h2>Grabación del canal</h2><span class:list={['badge', state === states.recording ? 'green' : 'gray']}>{state}</span></div>
+  <div class="card-body">
+    {saved && <p role="status">Configuración guardada.</p>}
+    {error && <p role="alert">{error}</p>}
+    {canEdit && <form method="POST" action={`/api/admin/radio/${channel.id}`}>
+      <label for="radio-source">URL del audio en directo</label>
+      <input id="radio-source" name="source" type="url" maxlength="2048" autocomplete="off" spellcheck="false" value={settings?.source_url || ''} aria-describedby="radio-source-help"/>
+      <p id="radio-source-help" class="hint">Pega la URL HTTP o HTTPS del stream de audio de la radio.</p>
+      <label class="radio-check"><input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>Grabar continuamente</label>
+      <label class="radio-check"><input type="checkbox" name="published" checked={Boolean(settings?.published)}/>Publicar la página de Radio a la carta</label>
+      <button class="button primary" type="submit">Guardar configuración</button>
+    </form>}
+    {!canEdit && <p class="hint">Un administrador puede configurar la fuente y la publicación de este canal.</p>}
+    <p class="hint">Opus a 82 kb/s. El archivo conserva hoy y los cuatro días anteriores, con cortes cada hora de Chile continental.</p>
+    {settings?.published === 1 && channel.enabled === 1 &&
+      <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta</a>}
+  </div>
+</section>
+<style>
+.radio-settings form { display: grid; gap: 12px; justify-items: start; margin-block-end: 20px; }
+.radio-settings form input[type="url"] { width: min(100%, 640px); }
+.radio-settings form p { margin: 0; }
+.radio-check { display: flex; align-items: center; gap: 8px; }
+</style>

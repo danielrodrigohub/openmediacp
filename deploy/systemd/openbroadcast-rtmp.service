@@ -1,0 +1,11 @@
+[Unit]
+Description=OpenBroadcast RTMP forwarding to existing engine ingress
+Requires=openbroadcast-rtmp.socket
+After=network.target
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1937
+User=nobody
+NoNewPrivileges=true
+PrivateTmp=true
+Restart=on-failure

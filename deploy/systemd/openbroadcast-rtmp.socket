@@ -1,0 +1,12 @@
+[Unit]
+Description=OpenBroadcast standard RTMP ingress (1935)
+
+[Socket]
+ListenStream=0.0.0.0:1935
+ListenStream=[::]:1935
+BindIPv6Only=ipv6-only
+NoDelay=true
+KeepAlive=true
+
+[Install]
+WantedBy=sockets.target

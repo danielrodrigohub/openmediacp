@@ -1,0 +1,96 @@
+name: openmediacp-local
+services:
+  app:
+    image: openmediacp-app:local
+    build:
+      context: .
+    environment:
+      STORAGE_QUOTA_BYTES: "536870912"
+      MAX_OUTPUT_BYTES: "268435456"
+      APP_ORIGIN: http://127.0.0.1:14321
+      MEDIA_ORIGIN: http://127.0.0.1:13333
+      INGEST_HOST: 127.0.0.1:11935
+      OME_WORKER_SECRET: ${OME_WORKER_SECRET:?Prepare worker secret}
+      OME_API_URL: http://ome:8081
+      OME_API_TOKEN: ${OME_API_TOKEN:?Run local preparation}
+      OME_ADMISSION_SECRET: ${OME_ADMISSION_SECRET:?Run local preparation}
+    ports: ['127.0.0.1:14321:4321']
+    volumes: [local_data:/data]
+    read_only: true
+    tmpfs: [/tmp:size=256m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    cpu_shares: 256
+    mem_limit: 1g
+    pids_limit: 256
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4321/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+  radio:
+    image: openmediacp-app:local
+    restart: unless-stopped
+    command: [node, scripts/radio-recorder.mjs]
+    depends_on:
+      app: {condition: service_healthy}
+    volumes: [local_data:/data]
+    read_only: true
+    tmpfs: [/tmp:size=32m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  playout:
+    image: openmediacp-app:local
+    command: [node, scripts/playout.mjs]
+    depends_on:
+      app: {condition: service_healthy}
+      ome: {condition: service_started}
+    environment:
+      OME_WORKER_SECRET: ${OME_WORKER_SECRET}
+    volumes: [local_data:/data]
+    read_only: true
+    tmpfs: [/tmp:size=128m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpu_shares: 1536
+    mem_limit: 1g
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  ome:
+    image: openmediacp-ome:local
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.ome
+      args:
+        OME_BASE_IMAGE: ovenmedialabs/ovenmediaengine:v0.21.0
+    depends_on:
+      app: {condition: service_healthy}
+    environment:
+      APP_ORIGIN: http://127.0.0.1:14321
+      MEDIA_ORIGIN: http://127.0.0.1:13333
+      OME_API_TOKEN: ${OME_API_TOKEN}
+      OME_ADMISSION_SECRET: ${OME_ADMISSION_SECRET}
+    volumes:
+      - ./deploy/Server.xml:/opt/ovenmediaengine/bin/origin_conf/Server.xml:ro
+      - ./deploy/Logger.xml:/opt/ovenmediaengine/bin/origin_conf/Logger.xml:ro
+      - local_data:/data:ro
+    ports: ['127.0.0.1:11935:1935','127.0.0.1:13333:3333']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    mem_limit: 768m
+    pids_limit: 512
+volumes:
+  local_data:

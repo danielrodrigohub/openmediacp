@@ -1,0 +1,4 @@
+export type MediaAsset={id:string;name:string;folder:string;bytes:number;duration:number;created_at:number};
+export function mediaSize(bytes:number){if(bytes>0&&bytes<1024**2)return `${(bytes/1024).toLocaleString('es-CL',{maximumFractionDigits:1})} KiB`;return bytes>=1024**3?`${(bytes/1024**3).toLocaleString('es-CL',{maximumFractionDigits:1})} GiB`:`${(bytes/1024**2).toLocaleString('es-CL',{maximumFractionDigits:1})} MiB`;}
+export function mediaDuration(seconds:number){if(!Number.isFinite(seconds)||seconds<=0)return 'No disponible';const n=Math.round(seconds);return n>=3600?`${Math.floor(n/3600)}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`:`${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
+export function mediaTitle(name:string){return name.replace(/\.(mp4|m4v)$/i,'');}

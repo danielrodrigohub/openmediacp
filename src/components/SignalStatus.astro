@@ -1,0 +1,7 @@
+---
+import Icon from './Icon.astro';
+import {checkedTime,type SignalSnapshot} from '../server/signal';
+interface Props{signal:SignalSnapshot}
+const {signal}=Astro.props;
+---
+<div class="signal-strip"><Icon name="info" size={19}/><strong>Salida: {signal.source}</strong><span>Entrada en vivo: {signal.input==='available'?'Conectada':signal.input==='absent'?'Sin conexión':'Sin datos'}</span><span class="checked-time">Comprobado: {checkedTime(signal.checkedAt)}</span></div>

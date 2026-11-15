@@ -1,0 +1,5 @@
+---
+import Panel from '../layouts/Panel.astro';
+import Icon from '../components/Icon.astro';
+---
+<Panel title="Mi cuenta" section="cuenta" admin={Astro.locals.user?.role==='admin'}><section class="card account-card"><div class="card-heading"><h2>Seguridad de tu cuenta</h2><Icon name="shield" size={20}/></div><div class="account-security"><Icon name="lock" size={27}/><div><strong>{Astro.locals.user?.username}</strong><p>{Astro.locals.user?.role==='admin'?'Superadministrador':'Cliente'}</p></div></div><form class="card-body form-fields" data-api-form="/api/auth/password"><p>Usa una frase única de 15 a 128 caracteres. El cambio cierra todas tus sesiones.</p><label>Contraseña actual<input name="current" type="password" autocomplete="current-password" required maxlength="128"/></label><label>Nueva contraseña<input name="password" type="password" autocomplete="new-password" minlength="15" maxlength="128" required/></label><div data-form-result role="status" aria-live="polite"></div><div><button type="submit" class="button primary">Cambiar contraseña</button></div></form></section></Panel>

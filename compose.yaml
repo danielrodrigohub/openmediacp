@@ -1,0 +1,148 @@
+name: openmediacp
+services:
+  app:
+    image: openmediacp-app:local
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+    restart: unless-stopped
+    environment:
+      APP_ORIGIN: https://${PANEL_DOMAIN:?Set PANEL_DOMAIN}
+      MEDIA_ORIGIN: https://${MEDIA_DOMAIN:?Set MEDIA_DOMAIN}
+      # INGEST_DOMAIN is the installer-facing name.  Keep INGEST_HOST as a
+      # backwards-compatible fallback for manual and local deployments.
+      INGEST_HOST: ${INGEST_DOMAIN:-${INGEST_HOST:?Set INGEST_DOMAIN or INGEST_HOST}}
+      OME_WORKER_SECRET: ${OME_WORKER_SECRET:?Prepare worker secret}
+      OME_API_URL: http://ome:8081
+      OME_API_TOKEN: ${OME_API_TOKEN:?Set OME_API_TOKEN}
+      OME_ADMISSION_SECRET: ${OME_ADMISSION_SECRET:?Set OME_ADMISSION_SECRET}
+      PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET}
+    volumes: [panel_data:/data]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp:size=256m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4321/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  radio:
+    image: openmediacp-app:local
+    restart: unless-stopped
+    command: [node, scripts/radio-recorder.mjs]
+    depends_on:
+      app: {condition: service_healthy}
+    volumes: [panel_data:/data]
+    read_only: true
+    tmpfs: [/tmp:size=32m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  playout:
+    image: openmediacp-app:local
+    restart: unless-stopped
+    command: [node, scripts/playout.mjs]
+    depends_on:
+      app: {condition: service_healthy}
+      ome: {condition: service_started}
+    environment:
+      OME_WORKER_SECRET: ${OME_WORKER_SECRET}
+    volumes: [panel_data:/data]
+    read_only: true
+    tmpfs: [/tmp:size=128m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  hls:
+    image: openmediacp-app:local
+    restart: unless-stopped
+    command: [node, scripts/hls-output.mjs]
+    environment:
+      PORT: "8090"
+    depends_on:
+      app: {condition: service_healthy}
+      ome: {condition: service_started}
+    volumes: [panel_data:/data]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp:size=32m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  ome:
+    image: openmediacp-ome:local
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.ome
+      args:
+        OME_BASE_IMAGE: ${OME_IMAGE:-ovenmedialabs/ovenmediaengine:v0.21.0}
+    restart: unless-stopped
+    depends_on:
+      app: {condition: service_healthy}
+    environment:
+      APP_ORIGIN: https://${PANEL_DOMAIN}
+      MEDIA_ORIGIN: https://${MEDIA_DOMAIN}
+      OME_API_TOKEN: ${OME_API_TOKEN}
+      OME_ADMISSION_SECRET: ${OME_ADMISSION_SECRET}
+    volumes:
+      - ./deploy/Server.xml:/opt/ovenmediaengine/bin/origin_conf/Server.xml:ro
+      - ./deploy/Logger.xml:/opt/ovenmediaengine/bin/origin_conf/Logger.xml:ro
+      - panel_data:/data:ro
+    ports: ['1935:1935']
+    networks: [backend]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    mem_limit: 4g
+    pids_limit: 512
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    depends_on:
+      app: {condition: service_healthy}
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      PROXY_SECRET: ${PROXY_SECRET}
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./deploy/certs:/certs:ro
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    mem_limit: 256m
+    pids_limit: 128
+networks:
+  backend:
+volumes:
+  panel_data:
+  caddy_data:
+  caddy_config:

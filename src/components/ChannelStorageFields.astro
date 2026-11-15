@@ -1,0 +1,13 @@
+---
+import {bytesPerGiB} from '../server/channel-storage';
+interface Props {quota:number}
+const {quota}=Astro.props;
+---
+<div class="form-fields" data-storage-fields>
+ <label>Modalidad del canal<select name="storageMode" data-storage-mode>
+  <option value="storage" selected={quota>0}>Streaming con almacenamiento</option>
+  <option value="streaming" selected={!quota}>Solo streaming</option>
+ </select></label>
+ <label data-storage-quota hidden={!quota}>Cuota de almacenamiento (GiB)<input name="quotaGiB" type="number" min="0.0625" max="10000" step="any" value={quota?quota/bytesPerGiB:1} required disabled={!quota}/></label>
+ <p class="hint">Solo streaming permite emitir desde OBS y usar la cartela de emergencia. Las subidas y la playlist de respaldo quedan deshabilitadas.</p>
+</div>

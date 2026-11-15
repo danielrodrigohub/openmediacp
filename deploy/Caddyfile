@@ -1,0 +1,30 @@
+{
+ email {$ACME_EMAIL}
+ admin off
+}
+{$PANEL_DOMAIN} {
+ encode zstd gzip
+ @private path /internal/*
+ respond @private 404
+ request_body {
+  max_size 130MB
+ }
+ reverse_proxy app:4321 {
+  header_up X-OM-Client-IP {remote_host}
+  header_up X-OM-Proxy-Key {$PROXY_SECRET}
+ }
+}
+{$MEDIA_DOMAIN} {
+ @continuous path_regexp continuous ^/(live/[a-f0-9]{16}/llhls\.m3u8|hls/[a-f0-9]{16}/[a-f0-9]{16}/seg[0-9]{9}\.ts)$
+ handle @continuous {
+  reverse_proxy hls:8090
+ }
+ @media path_regexp media ^/live/(auto_|marked_|in_)?[a-f0-9]{16}/.*$
+ handle @media {
+  header Cache-Control "no-store"
+  reverse_proxy ome:3333
+ }
+ handle {
+  respond 404
+ }
+}

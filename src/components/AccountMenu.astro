@@ -1,0 +1,7 @@
+---
+import Icon from './Icon.astro';
+import type {User} from '../server/config';
+interface Props{user:User;bottom?:boolean}
+const {user,bottom=false}=Astro.props;
+---
+<details class:list={['user-menu',{'sidebar-user':bottom}]}><summary class="user-summary" aria-label="Menú de usuario"><span class="avatar">{user.username.slice(0,2).toUpperCase()}</span>{bottom&&<span>{user.username}<small>{user.role==='admin'?'Superadministrador':'Cliente'}</small></span>}<Icon name="chevron" size={16}/></summary><div class="user-popover"><a href="/cuenta"><Icon name="settings" size={18}/>Mi cuenta</a><button type="button" data-theme-toggle><Icon name="moon" size={18}/>Cambiar tema</button><button type="button" data-logout><Icon name="logout" size={18}/>Cerrar sesión</button></div></details>

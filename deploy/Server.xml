@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server version="8">
+ <Name>OpenMediaCP</Name><Type>origin</Type><IP>*</IP><PrivacyProtection>true</PrivacyProtection>
+ <Modules><HTTP2><Enable>false</Enable></HTTP2><LLHLS><Enable>true</Enable></LLHLS></Modules>
+ <Bind><Managers><API><Port>8081</Port></API></Managers><Providers><RTMP><Port>1935</Port><WorkerCount>2</WorkerCount></RTMP></Providers><Publishers><LLHLS><Port>3333</Port><WorkerCount>2</WorkerCount></LLHLS></Publishers></Bind>
+ <Managers><Host><Names><Name>*</Name></Names></Host><API><AccessToken>${env:OME_API_TOKEN}</AccessToken></API></Managers>
+ <VirtualHosts><VirtualHost><Name>default</Name><Host><Names><Name>*</Name></Names></Host>
+ <AdmissionWebhooks><ControlServerUrl>http://app:4321/internal/admission</ControlServerUrl><SecretKey>${env:OME_ADMISSION_SECRET}</SecretKey><Timeout>3000</Timeout><Enables><Providers>rtmp</Providers></Enables></AdmissionWebhooks>
+ <Applications><Application><Name>live</Name><Type>live</Type>
+ <OutputProfiles><OutputProfile><Name>720p</Name><OutputStreamName>${OriginStreamName}</OutputStreamName><Encodes>
+ <Video><Name>video</Name><Bypass>true</Bypass></Video>
+ <Audio><Name>audio</Name><Bypass>true</Bypass></Audio>
+ </Encodes></OutputProfile></OutputProfiles>
+ <Providers><RTMP/><Schedule><MediaRootDir>/data/media</MediaRootDir><ScheduleFilesDir>/data/schedules</ScheduleFilesDir></Schedule></Providers>
+ <Publishers><AppWorkerCount>1</AppWorkerCount><StreamWorkerCount>2</StreamWorkerCount><LLHLS><ChunkDuration>1</ChunkDuration><PartHoldBack>4</PartHoldBack><SegmentDuration>6</SegmentDuration><SegmentCount>3</SegmentCount><CrossDomains><Url>${env:APP_ORIGIN}</Url><Url>${env:MEDIA_ORIGIN}</Url></CrossDomains></LLHLS></Publishers>
+ </Application></Applications></VirtualHost></VirtualHosts>
+</Server>

@@ -1,0 +1,11 @@
+import {accessibleChannel} from '../../../server/channels.ts';
+import {channelQuota} from '../../../server/channel-storage.ts';
+import type {APIRoute} from 'astro';
+import {db} from '../../../server/db.ts';
+import {ensureFolder,normalizeFolder} from '../../../server/library.ts';
+import {jsonBody,text,apiError,InputError} from '../../../server/http.ts';
+export const POST:APIRoute=async({locals,request})=>{try{const b=await jsonBody(request);const owner=Number(b.owner);if(!Number.isSafeInteger(owner)||!db.prepare('SELECT id FROM users WHERE id=?').get(owner)||locals.user!.role!=='admin'&&owner!==locals.user!.id)throw new InputError('Propietario no válido.');const requested=typeof b.channel==='string'?b.channel:'';
+const candidates=requested?[]:db.prepare('SELECT id FROM channels WHERE owner_id=? LIMIT 2').all(owner) as {id:string}[];
+const channel=accessibleChannel(locals.user!,requested||(candidates.length===1?candidates[0].id:''));
+if(channel.owner_id!==owner||!channelQuota(channel))throw new InputError('El canal no tiene almacenamiento habilitado.');
+const path=normalizeFolder(text(b.path,240));if(!path)throw new InputError('Escribe el nombre de la carpeta.');ensureFolder(owner,path);return Response.json({message:'Carpeta creada.'});}catch(e){return apiError(e);}};

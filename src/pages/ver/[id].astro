@@ -1,0 +1,7 @@
+---
+import PublicPlayer from '../../components/PublicPlayer.astro';
+import {publicChannel} from '../../server/public-player';
+const channel=publicChannel(Astro.params.id);
+if(!channel)return new Response('Reproductor no disponible.',{status:404});
+---
+<PublicPlayer channel={channel} embedded={false}/>

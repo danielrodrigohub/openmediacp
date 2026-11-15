@@ -1,0 +1,44 @@
+---
+import Panel from '../../layouts/Panel.astro';
+import Icon from '../../components/Icon.astro';
+import MediaLibrary from '../../components/MediaLibrary.astro';
+import PlaylistEditor from '../../components/PlaylistEditor.astro';
+import Watermark from '../../components/Watermark.astro';
+import Connection from '../../components/Connection.astro';
+import Continuity from '../../components/Continuity.astro';
+import RadioSettings from '../../components/RadioSettings.astro';
+import {defaultAutoDJ} from '../../server/playlist';
+import {playlistRevision} from '../../server/channels';
+import {channelQuota} from '../../server/channel-storage';
+import {normalizeFolder} from '../../server/library';
+import {db} from '../../server/db';
+import {dataDir} from '../../server/config';
+import {signalSnapshot} from '../../server/signal';
+import {existsSync} from 'node:fs';
+import {join} from 'node:path';
+import type {MediaAsset} from '../../lib/media';
+const section=Astro.params.section!;
+const titles:Record<string,string>={archivos:'Biblioteca',playlists:'Playlist de respaldo',fallback:'Continuidad',conexion:'Conectar OBS',marca:'Marca de agua',radio:'Radio a la carta',programacion:'Programación',actividad:'Actividad del canal'};
+if(!titles[section])return new Response('Página no encontrada.',{status:404});
+const {channel,user}=Astro.locals,owner=channel?.owner_id||user!.id;
+const quota=channel?channelQuota(channel):0;
+const rows=db.prepare('SELECT id,name,filename,bytes,folder,duration,created_at FROM assets WHERE owner_id=? AND (channel_id IS NULL OR channel_id=?) ORDER BY created_at').all(owner,channel?.id||'') as (MediaAsset&{filename:string})[];
+const assets=rows.map(({filename,...a})=>({...a,available:existsSync(join(dataDir,'media',filename))}));
+let folder='';try{folder=normalizeFolder(Astro.url.searchParams.get('folder')||'');}catch{return new Response('Carpeta no válida.',{status:400});}
+const folders=(db.prepare('SELECT path FROM folders WHERE owner_id=? ORDER BY path').all(owner) as {path:string}[]).map(x=>x.path).filter(p=>(p.includes('/')?p.slice(0,p.lastIndexOf('/')):'')===folder);
+const policy={...defaultAutoDJ,...JSON.parse(channel?.autodj||'{}')};const selected:string[]=JSON.parse(channel?.fallback||'[]');
+const signal=channel&&['fallback','conexion'].includes(section)?await signalSnapshot(channel.id):null;
+---
+<Panel title={titles[section]} section={section==='actividad'?'overview':section}><Fragment slot="actions">{channel&&quota>0&&section==='archivos'&&<button class="button primary" type="button" data-open-dialog="upload-videos"><Icon name="plus" size={20}/>Subir videos</button>}{channel&&quota>0&&section==='playlists'&&<span class:list={['badge',selected.length?'green':'gray']} data-playlist-configured><Icon name={selected.length?'check':'info'} size={17}/>{selected.length?'Respaldo configurado':'Sin playlist configurada'}</span>}</Fragment>
+{!channel?<section class="card empty-state"><Icon name="video" size={34}/><h2>No hay un canal seleccionado</h2><p>{user?.role==='admin'?'Crea un canal o selecciona uno desde Administración.':'Tu administrador debe asignarte un canal para acceder a sus contenidos.'}</p>{user?.role==='admin'&&<a class="button primary" href="/admin/servicios/">Ver canales</a>}</section>:<>
+{!quota&&['archivos','playlists'].includes(section)&&<section class="card card-body"><h2>Canal solo streaming</h2><p class="hint">Este canal emite desde OBS. Para subir videos o configurar el respaldo, solicita almacenamiento al administrador.</p><a class="text-link" href={`/cliente/conexion/?channel=${channel.id}`}>Conectar OBS</a></section>}
+{quota>0&&section==='archivos'&&<MediaLibrary quota={quota} assets={assets} folders={folders} folder={folder} owner={owner} channel={channel.id}/>}
+{quota>0&&section==='playlists'&&<PlaylistEditor assets={assets} selected={selected} policy={policy} channel={channel.id} revision={playlistRevision(channel)} add={(Astro.url.searchParams.get('add')||'').split(',').filter(id=>/^[a-f0-9]{32}$/.test(id))}/>}
+{section==='conexion'&&signal&&<Connection channel={channel} signal={signal}/>}
+{section==='fallback'&&signal&&<Continuity channel={channel} assets={assets} signal={signal}/>}
+{section==='radio'&&<RadioSettings channel={channel}/>}
+{section==='marca'&&<Watermark channel={channel}/>}
+{section==='actividad'&&<section class="card"><div class="card-heading"><h2>Cambios registrados</h2><a class="text-link" href={`/cliente/?channel=${channel.id}`}>Volver al panel</a></div><div class="table-wrap admin-table"><table><thead><tr><th>Fecha y hora</th><th>Actividad</th></tr></thead><tbody>{(db.prepare('SELECT at,event FROM audit WHERE resource=? ORDER BY id DESC LIMIT 100').all(channel.id) as {at:number;event:string}[]).map(e=><tr><td>{new Date(e.at).toLocaleString('es-CL',{timeZone:'America/Santiago'})}</td><td>{({channel_created:'Canal creado',fallback_updated:'Playlist de respaldo actualizada',ingest_key_rotated:'Clave de emisión renovada',channel_renamed:'Nombre del canal actualizado',watermark_updated:'Marca de agua actualizada',frame_rate_updated:'Perfil de emisión actualizado'} as Record<string,string>)[e.event]||'Cambio de configuración del canal'}</td></tr>)}</tbody></table></div><p class="editor-note">Hasta 100 cambios recientes del canal.</p></section>}
+{section==='programacion'&&<section class="card"><div class="card-heading"><h2>Programación</h2></div><div class="card-body"><p>El canal prioriza el directo y utiliza la playlist de respaldo cuando no hay señal. Esta versión no tiene un calendario de emisiones.</p><a class="button primary" href={`/cliente/playlists/?channel=${channel.id}`}>Editar playlist</a></div></section>}
+</>}
+</Panel>

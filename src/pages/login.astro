@@ -1,0 +1,12 @@
+---
+import '@fontsource-variable/source-sans-3';
+import '@fontsource/ibm-plex-mono/400.css';
+import '../styles/theme.css';
+import Icon from '../components/Icon.astro';
+import Brand from '../components/Brand.astro';
+import {themeScript} from '../server/theme';
+import {db} from '../server/db';
+if(Astro.locals.user)return Astro.redirect(Astro.locals.user.role==='admin'?'/admin/':'/cliente/');
+const configured=!!db.prepare('SELECT id FROM users LIMIT 1').get();
+---
+<!doctype html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width"/><title>Iniciar sesión · OpenBroadcast Panel</title><meta name="description" content="Accede a tu centro de emisión OpenBroadcast Panel."/><script is:inline set:html={themeScript}/></head><body class="login-page"><header class="login-header"><Brand href="/"/><a class="text-link" href="/">Volver al sitio <Icon name="arrow" size={16}/></a></header><div class="login-body"><section class="login-visual"><h2>Contenido y continuidad<br/>desde tu centro de emisión.</h2><figure class="product-figure"><img src="/images/capturas/playlist-respaldo.jpg" alt="Captura real del editor de playlist de respaldo de OpenBroadcast Panel" width="1280" height="1018"/><figcaption>Captura real de OpenBroadcast Panel · playlist de prueba</figcaption></figure></section><div class="login-form-side"><div class="login-wrap"><section class="login-card"><h1>Accede a tu centro de emisión</h1><p>Introduce tu usuario y contraseña.</p>{configured?<form data-api-form="/api/auth/login"><label>Usuario<input name="username" autocomplete="username" required maxlength="64" autofocus/></label><label>Contraseña<span class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="128"/><button class="icon-button bare" type="button" data-show-password="login-password" aria-label="Mostrar contraseña" aria-pressed="false"><Icon name="eye" size={20}/></button></span></label><div data-form-result role="status" aria-live="polite"></div><button class="button primary" type="submit">Iniciar sesión</button></form>:<div class="notice">El administrador debe completar la configuración y crear la primera cuenta en el servidor.</div>}<div class="login-security"><Icon name="lock" size={17}/><span>Acceso privado a tu centro de emisión.</span></div></section><p class="login-footer"><a href="/ayuda/">Ayuda para acceder a la plataforma</a></p></div></div></div><script>import '../scripts/panel';</script></body></html>

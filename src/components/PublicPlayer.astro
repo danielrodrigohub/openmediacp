@@ -1,0 +1,25 @@
+---
+import '@fontsource-variable/source-sans-3';
+import '../styles/theme.css';
+import Brand from './Brand.astro';
+import Player from './Player.astro';
+import {playbackUrl} from '../server/channels';
+interface Props {channel:{id:string;name:string;enabled:number};embedded?:boolean}
+const {channel,embedded=false}=Astro.props;
+---
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="robots" content="noindex"/><title>{channel.name} · STREAMCHILENO.CL</title></head>
+<body class:list={['shared-player-page',{'shared-player-embed':embedded}]}>
+ {embedded?<div class="shared-embed-content">{channel.enabled?<Player url={playbackUrl(channel.id)} viewerChannel={channel.id}/>:<div class="player-placeholder"><strong>Emisión detenida</strong></div>}</div>:<>
+  <header class="public-header"><Brand/></header>
+  <main class="shared-watch-content"><h1>{channel.name}</h1>{channel.enabled?<Player url={playbackUrl(channel.id)} viewerChannel={channel.id}/>:<div class="player-placeholder"><strong>Emisión detenida</strong></div>}</main>
+ </>}
+</body>
+</html>
+<style is:global>
+.shared-watch-content{width:min(100%,1040px);margin:0 auto;padding:24px 16px}
+.shared-watch-content h1{margin:0 0 16px}
+.shared-player-embed{margin:0;background:#111b2b}
+.shared-player-embed .live-monitor{min-height:0}
+</style>

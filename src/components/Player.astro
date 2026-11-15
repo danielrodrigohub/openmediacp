@@ -1,0 +1,128 @@
+---
+import '@fontsource/montserrat/latin-100.css';
+import '@fontsource/montserrat/latin-900.css';
+import Icon from './Icon.astro';
+import {db} from '../server/db';
+interface Props { url:string; viewerChannel?:string }
+const {url,viewerChannel}=Astro.props;
+const channelId=url.match(/\/live\/([a-f0-9]{16})\/llhls\.m3u8$/)?.[1];
+const channel=channelId?db.prepare('SELECT watermark FROM channels WHERE id=?').get(channelId) as {watermark:string}|undefined:undefined;
+const livePrefix=channel?(JSON.parse(channel.watermark).enabled?'marked_':'in_'):undefined;
+---
+<div class="live-monitor" data-oven-player data-url={url} data-live-prefix={livePrefix} data-viewer-channel={viewerChannel}><div data-player-mount><div class="player-placeholder"><button class="button player-load" data-load-player hidden>Reintentar <Icon name="play" size={14}/></button></div></div><span role="status" data-player-status></span></div>
+<script>
+ import {trackViewer} from '../scripts/viewer-presence';
+ import type HlsType from 'hls.js';
+ // Load the player as soon as the monitor mounts; muted playback permits autoplay.
+ import playerUrl from 'ovenplayer/dist/ovenplayer.js?url';
+ const win=window as unknown as {Hls:typeof HlsType;OvenPlayer:{create:(element:HTMLElement,options:unknown)=>{on:(event:string,callback:()=>void)=>void;load:(sources:unknown)=>void}}};
+ let ready:Promise<void>|null=null;
+ const bootLibrary=()=>{
+  if(ready)return ready;
+  ready=(async()=>{
+   const {default:Hls}=await import('hls.js');
+   (window as unknown as {Hls:typeof HlsType}).Hls=Hls;
+   await new Promise<void>((resolve,reject)=>{const script=document.createElement('script');script.src=playerUrl;script.onload=()=>resolve();script.onerror=()=>{ready=null;reject(new Error());};document.head.append(script);});
+  })();
+  return ready;
+ };
+ // Start fetching before any monitor asks for it so creation is near-immediate.
+ void bootLibrary().catch(()=>{});
+ document.querySelectorAll<HTMLElement>('[data-oven-player]').forEach(el=>{
+  if(el.dataset.viewerChannel)trackViewer(el,el.dataset.viewerChannel);
+  const original=el.dataset.url!;
+  const sourceUrl=(prefix:string)=>original.replace(/\/live\//,'/live/'+prefix);
+  const available=async(url:string)=>fetch(url,{cache:'no-store',signal:AbortSignal.timeout(1500)})
+    .then(async response=>response.ok&&(await response.text()).includes('#EXT-X-STREAM-INF:')).catch(()=>false);
+  const live=el.dataset.livePrefix?sourceUrl(el.dataset.livePrefix):null;
+  const fallback=sourceUrl('auto_');
+  const select=async()=>{
+    if(!live)return original;
+    const [liveReady,autoReady]=await Promise.all([available(live),available(fallback)]);
+    return liveReady?live:autoReady?fallback:original;
+  };
+  const sources=[{label:'Señal del canal',type:'hls',file:original}];
+  const button=el.querySelector<HTMLButtonElement>('[data-load-player]')!;
+  const load=async()=>{
+   button.disabled=true;button.hidden=true;
+   const status=el.querySelector('[data-player-status]');
+   try{
+    // Fetch the library and probe the sources at the same time: viewers should
+    // not wait for both steps one after the other before the first frame.
+    const [ ,selected]=await Promise.all([bootLibrary(),select()]);
+    sources[0].file=selected;
+    const player=win.OvenPlayer.create(el.querySelector<HTMLElement>('[data-player-mount]')!,{autoStart:true,mute:true,sources,hlsConfig:{enableWorker:true,lowLatencyMode:false,liveSyncDuration:12,liveMaxLatencyDuration:30,maxBufferLength:30,backBufferLength:15,maxLiveSyncPlaybackRate:1},aspectRatio:'16:9',controls:true,showBigPlayButton:false});
+    // Autoplay has to start muted; the first interaction turns the sound on so
+    // the volume is one click away instead of buried under a loading screen.
+    const enableSound=()=>{
+     el.removeEventListener('pointerdown',enableSound);
+     el.removeEventListener('keydown',enableSound);
+     const video=el.querySelector('video');
+     if(!video||!video.muted)return;
+     try{(player as unknown as {setMute:(muted:boolean)=>void}).setMute(false);}catch{/* keep muted */}
+    };
+    el.addEventListener('pointerdown',enableSound);
+    el.addEventListener('keydown',enableSound);
+    const labelControls=()=>{
+      const right=el.querySelector('.op-right-controls');
+      if(right&&!right.querySelector('.op-streamchileno-mark')){
+        const mark=document.createElement('span');
+        mark.className='op-streamchileno-mark';
+        const credit=document.createElement('span');
+        credit.className='op-streamchileno-credit';
+        credit.textContent='Desarrollado x';
+        const domain=document.createElement('strong');
+        domain.className='op-streamchileno-domain';
+        domain.textContent='STREAMCHILENO.CL';
+        mark.append(credit,' ',domain);
+        right.prepend(mark);
+      }
+      const labels:Record<string,string>={'.op-play-button':'Reproducir o pausar','.op-volume-button':'Activar o silenciar audio','.op-setting-button':'Calidad y ajustes','.op-fullscreen-button':'Pantalla completa','.op-seek-button-back':'Retroceder 10 segundos','.op-seek-button-forward':'Avanzar 10 segundos'};
+      for(const [selector,label] of Object.entries(labels))el.querySelector(selector)?.setAttribute('aria-label',label);
+    };
+    labelControls();player.on('ready',labelControls);
+    let lastFrame=-1,lastTime=-1,lastProgress=performance.now(),failed=false;
+    player.on('error',()=>{failed=true;});
+    let candidate=sources[0].file, confirmations=0, checking=false;
+    const selector=window.setInterval(async()=>{
+      if(!el.isConnected){window.clearInterval(selector);return;}
+      if(!live||checking)return;
+      checking=true;
+      try{
+        const next=await select();
+        if(next!==candidate){candidate=next;confirmations=0;}
+        if(++confirmations<2||next===sources[0].file)return;
+        sources[0].file=next;
+        failed=false;lastProgress=performance.now();
+        player.load(sources);
+      }finally{checking=false;}
+    },4000);
+    const watchdog=window.setInterval(()=>{
+      if(!el.isConnected){window.clearInterval(watchdog);return;}
+      const video=el.querySelector('video');
+      const now=performance.now();
+      if(!video||document.hidden){lastProgress=now;return;}
+      const frames=video.getVideoPlaybackQuality?.().totalVideoFrames??-1;
+      if(!failed&&(video.paused||video.seeking||(frames>=0?frames!==lastFrame:video.currentTime!==lastTime))){
+        lastFrame=frames;lastTime=video.currentTime;lastProgress=now;
+        return;
+      }
+      if(now-lastProgress<12000)return;
+      lastProgress=now;failed=false;lastFrame=-1;lastTime=-1;
+      player.load(sources);
+    },2000);
+   }catch{if(status)status.textContent='No se pudo cargar el reproductor. Revisa la conexión.';button.disabled=false;button.hidden=false;}
+  };
+  button.addEventListener('click',load);
+  void load();
+ });
+</script>
+
+<style is:global>
+[data-oven-player] .player-placeholder{aspect-ratio:16/9;background:#000;display:flex;align-items:center;justify-content:center}
+[data-oven-player] .op-right-controls{display:flex;align-items:center}
+[data-oven-player] .op-streamchileno-mark{display:inline-block;margin-inline:6px;color:#fff;font:100 clamp(8px,2cqw,13px)/1.15 Montserrat,sans-serif;white-space:nowrap;pointer-events:none}
+[data-oven-player] .op-streamchileno-credit{font-weight:100}
+[data-oven-player] .op-streamchileno-domain{font-weight:900}
+[data-oven-player]{container-type:inline-size}
+</style>

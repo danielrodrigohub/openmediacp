@@ -1,0 +1,75 @@
+---
+import Panel from '../../layouts/Panel.astro';
+import {monitorSnapshot} from '../../server/monitor';
+import {mediaSize} from '../../lib/media';
+const monitor=await monitorSnapshot();
+const channels=Astro.locals.channels;
+const viewing=(id:string)=>monitor.viewers.get(id)||0;
+const audience=channels.filter(channel=>channel.enabled&&channel.public_player).reduce((total,channel)=>total+viewing(channel.id),0);
+const number=(value:number)=>value.toLocaleString('es-CL',{maximumFractionDigits:2});
+const date=(value:number)=>new Date(value).toLocaleString('es-CL',{timeZone:'America/Santiago'});
+const events:Record<string,string>={
+ login:'Inicio de sesión',login_failed:'Intento de acceso fallido',logout:'Cierre de sesión',
+ user_created:'Cuenta creada',password_changed:'Contraseña cambiada',channel_created:'Canal creado',
+ channel_started:'Emisión iniciada',channel_stopped:'Emisión detenida',channel_restarted:'Emisión reiniciada',
+ fallback_updated:'Playlist guardada',asset_uploaded:'Video subido',channel_storage_updated:'Cuota del canal editada',
+ public_player_enabled:'Reproductor público habilitado',public_player_disabled:'Reproductor público deshabilitado',
+ ingest_key_rotated:'Clave de emisión renovada',watermark_updated:'Marca de agua actualizada',
+ frame_rate_updated:'Perfil de emisión actualizado',channel_renamed:'Canal renombrado',
+};
+---
+<Panel title="Monitor y registros" description="Revisa los recursos del servidor, la audiencia y la actividad del panel." section="monitor" admin>
+ <div data-admin-monitor>
+  <p class="hint">Actualización cada 10 segundos con la pestaña visible · Última lectura {date(monitor.now)}</p>
+  <div class="summary-grid">
+   <div class="summary-tile"><div><p>CPU</p><strong>{monitor.cpu===null?'Calculando…':number(monitor.cpu)+' %'}</strong><small>Sistema donde corre el panel</small></div></div>
+   <div class="summary-tile"><div><p>Memoria RAM</p><strong>{mediaSize(monitor.ram.used)}</strong><small>Ocupada de {mediaSize(monitor.ram.total)}</small></div></div>
+   <div class="summary-tile"><div><p>Disco de datos</p><strong>{monitor.disk?mediaSize(monitor.disk.available):'Sin datos'}</strong><small>{monitor.disk?`Libres de ${mediaSize(monitor.disk.total)} · ${mediaSize(monitor.disk.used)} usados`:'No se pudo consultar el volumen'}</small></div></div>
+   <div class="summary-tile"><div><p>Ancho de banda de salida</p><strong>{monitor.throughput===null?(monitor.engineAvailable?'Calculando…':'Sin datos'):number(monitor.throughput/1e6)+' Mbps'}</strong><small>{monitor.sent===null?'Motor sin datos':`${mediaSize(monitor.sent)} enviados por el motor`}</small></div></div>
+   <div class="summary-tile"><div><p>Espectadores en página e iframe</p><strong>{audience}</strong><small>{monitor.llhls===null?'Conexiones LL-HLS del motor sin datos':`${monitor.llhls} ${monitor.llhls===1?'conexión':'conexiones'} LL-HLS del motor`}</small></div></div>
+   <div class="summary-tile"><div><p>Usuarios activos del panel</p><strong>{monitor.users.length}</strong><small>Actividad en los últimos 5 minutos</small></div></div>
+  </div>
+  <section class="card"><div class="card-heading"><h2>Audiencia por canal</h2></div>
+   <div class="table-wrap admin-table"><table><thead><tr><th>Canal</th><th>Espectadores en reproducción</th></tr></thead><tbody>
+    {channels.map(channel=><tr><td>{channel.name}</td><td>{channel.enabled&&channel.public_player?viewing(channel.id):0}</td></tr>)}
+   </tbody></table></div>
+   <p class="card-body hint">La audiencia cuenta reproductores activos de la página pública y el iframe. Las conexiones LL-HLS incluyen clientes externos y pueden permanecer abiertas durante un tiempo.</p>
+  </section>
+  <section class="card"><div class="card-heading"><h2>Usuarios activos</h2></div>
+   {monitor.users.length?<div class="table-wrap admin-table"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Sesiones recientes</th><th>Última actividad</th></tr></thead><tbody>
+    {monitor.users.map(user=><tr><td>{user.username}</td><td>{user.role==='admin'?'Superadministrador':'Cliente'}</td><td>{user.sessions}</td><td>{date(user.lastSeen)}</td></tr>)}
+   </tbody></table></div>:<p class="card-body muted">Sin actividad reciente.</p>}
+  </section>
+  <section class="card"><div class="card-heading"><h2>Estado del respaldo y compositor</h2></div>
+   {monitor.runtime.length?<div class="table-wrap admin-table"><table><thead><tr><th>Canal</th><th>Último estado registrado</th><th>Hora</th></tr></thead><tbody>
+    {monitor.runtime.map(job=><tr><td>{job.name}</td><td>{job.state}</td><td>{date(job.updatedAt)}</td></tr>)}
+   </tbody></table></div>:<p class="card-body muted">El proceso de respaldo no ha registrado estados.</p>}
+  </section>
+  <section class="card"><div class="card-heading"><h2>Registro de actividad</h2><span class="badge gray">Últimos 60 eventos</span></div>
+   {monitor.logs.length?<div class="table-wrap admin-table"><table><thead><tr><th>Hora</th><th>Usuario</th><th>Evento</th><th>Recurso</th></tr></thead><tbody>
+    {monitor.logs.map(log=><tr><td>{date(log.at)}</td><td>{log.username||'Sistema'}</td><td>{events[log.event]||log.event}</td><td>{channels.find(channel=>channel.id===log.resource)?.name||log.resource||'—'}</td></tr>)}
+   </tbody></table></div>:<p class="card-body muted">Aún no hay eventos registrados.</p>}
+  </section>
+ </div>
+ <p class="hint" role="status" data-monitor-error hidden>No se pudo actualizar el monitor. Se conserva la última lectura.</p>
+</Panel>
+<script>
+ const current=document.querySelector<HTMLElement>('[data-admin-monitor]');
+ const error=document.querySelector<HTMLElement>('[data-monitor-error]');
+ let loading=false;
+ async function refresh(){
+  if(!current||!error||document.hidden||loading)return;
+  loading=true;
+  try{
+   const response=await fetch(location.pathname+'?refresh=1',{cache:'no-store'});
+   if(!response.ok)throw new Error();
+   const next=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-admin-monitor]');
+   if(!next)throw new Error();
+   current.replaceChildren(...next.childNodes);
+   error.hidden=true;
+  }catch{error.hidden=false;}
+  finally{loading=false;}
+ }
+ setInterval(()=>void refresh(),10000);
+ document.addEventListener('visibilitychange',()=>void refresh());
+</script>

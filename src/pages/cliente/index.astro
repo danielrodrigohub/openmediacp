@@ -1,0 +1,57 @@
+---
+import Panel from '../../layouts/Panel.astro';
+import Icon from '../../components/Icon.astro';
+import ChannelControls from '../../components/ChannelControls.astro';
+import SharePlayer from '../../components/SharePlayer.astro';
+import Player from '../../components/Player.astro';
+import SignalStatus from '../../components/SignalStatus.astro';
+import {playbackUrl} from '../../server/channels';
+import {signalSnapshot} from '../../server/signal';
+import {db} from '../../server/db';
+import {channelStorageUsage} from '../../server/channel-storage';
+import {mediaSize} from '../../lib/media';
+const {channel,user}=Astro.locals;
+const signal=channel?await signalSnapshot(channel.id):null;
+const library=channel?channelStorageUsage(channel):{total:0,bytes:0};
+const count=JSON.parse(channel?.fallback||'[]').length;
+const events=channel?db.prepare('SELECT at,event FROM audit WHERE resource=? ORDER BY id DESC LIMIT 5').all(channel.id) as {at:number;event:string}[]:[];
+const labels:Record<string,string>={public_player_enabled:'Reproductor público habilitado',public_player_disabled:'Reproductor público deshabilitado',channel_started:'Emisión iniciada',channel_stopped:'Emisión detenida',channel_restarted:'Emisión reiniciada',channel_created:'Canal creado',fallback_updated:'Playlist de respaldo actualizada',ingest_key_rotated:'Clave de emisión renovada',channel_renamed:'Nombre del canal actualizado',watermark_updated:'Marca de agua actualizada',frame_rate_updated:'Perfil de emisión actualizado'};
+const local=['localhost','127.0.0.1'].includes(new URL(playbackUrl('local')).hostname);
+---
+<Panel title={channel?.name||'Panel de emisión'} description="Panel de emisión · Supervisa la señal y el contenido de respaldo.">
+{!channel?<section class="card empty-state"><Icon name="video" size={38}/><h2>No hay canales asignados</h2><p>{user?.role==='admin'?'Crea un canal o selecciona uno desde Administración.':'Tu administrador debe asignarte un canal para operar la señal.'}</p>{user?.role==='admin'&&<a class="button primary" href="/admin/servicios/">Ver canales de video</a>}</section>:signal&&<>
+<ChannelControls channel={channel} output={signal.output}/>
+<section class="storage-band operation-metrics" data-audience={channel.id}>
+ <span><strong data-viewer-count>—</strong> espectadores en página e iframe</span>
+ <span><strong data-llhls-count>—</strong> conexiones LL-HLS del motor</span>
+</section>
+<SignalStatus signal={signal}/>
+<div class="two-columns"><section class="card monitor-card"><div class="card-heading"><h2>Monitor de emisión</h2><span class:list={['badge',signal.output==='available'?'blue':'gray']}>{signal.output==='available'?'Salida publicada':signal.output==='absent'?'Sin salida publicada':'Sin datos'}</span></div>{channel.enabled?<Player url={playbackUrl(channel.id)}/>:<div class="player-placeholder"><strong>Emisión detenida</strong><small>Pulsa Iniciar para habilitar la salida pública.</small></div>}<div class="monitor-footer"><span>La reproducción y la telemetría se verifican por separado.</span>{channel.enabled&&<span>Inicio automático · silenciado</span>}</div></section><section class="card"><div class="card-heading"><h2>Fuente activa</h2><Icon name="info" size={19}/></div><div class="card-body form-fields"><span class="badge gray">{signal.source}</span><p class="hint">No se ha podido verificar qué fuente está saliendo. La disponibilidad de la entrada no confirma la selección de salida.</p><dl class="detail-list"><div><dt>Contenido actual</dt><dd>Sin datos</dd></div><div><dt>Resolución informada</dt><dd class="mono">{signal.resolution||'Sin datos'}</dd></div><div><dt>FPS informados</dt><dd class="mono">{signal.fps?signal.fps.toLocaleString('es-CL',{maximumFractionDigits:2}):'Sin datos'}</dd></div><div><dt>Codec informado</dt><dd class="mono">{signal.codec||'Sin datos'}</dd></div><div><dt>Bitrate promedio informado</dt><dd class="mono">{signal.bitrate!==null?`${(signal.bitrate/1e6).toLocaleString('es-CL',{maximumFractionDigits:2})} Mbps`:'Sin datos'}</dd></div></dl><a class="button outline" href={`/cliente/fallback/?channel=${channel.id}`}>Revisar continuidad <Icon name="arrow" size={17}/></a></div></section></div>
+<div class="storage-band operation-metrics"><span><strong>{library.total}</strong> videos en biblioteca</span><span><strong>{count}</strong> videos en la playlist</span><span><strong>{mediaSize(library.bytes)}</strong> almacenados</span><a class="text-link" href={`/cliente/archivos/?channel=${channel.id}`}>Abrir biblioteca <Icon name="arrow" size={15}/></a></div>
+<SharePlayer channel={channel}/>
+<section class="card"><div class="card-heading"><h2>URL pública de reproducción</h2>{local&&<span class="badge gray">Entorno local</span>}</div><div class="card-body"><div class="copy-field"><input id="overview-playback" aria-label="URL pública de reproducción" readonly value={playbackUrl(channel.id)}/><button class="copy-button" type="button" data-copy="overview-playback">Copiar URL</button></div><p class="hint"><a class="text-link" href={playbackUrl(channel.id)} target="_blank" rel="noopener">Abrir enlace <Icon name="external" size={15}/></a> · La reproducción del canal es pública.{local?' Esta dirección solo funciona en el equipo de instalación.':''}</p></div></section>
+<section class="card"><div class="card-heading"><h2>Actividad reciente</h2><a class="text-link" href={`/cliente/actividad/?channel=${channel.id}`}>Ver actividad <Icon name="arrow" size={15}/></a></div>{events.length?<div class="table-wrap admin-table"><table><thead><tr><th>Actividad</th><th>Fecha y hora</th></tr></thead><tbody>{events.map(e=><tr><td>{labels[e.event]||'Cambio de configuración del canal'}</td><td>{new Date(e.at).toLocaleString('es-CL',{timeZone:'America/Santiago'})}</td></tr>)}</tbody></table></div>:<p class="card-body muted">No hay cambios registrados.</p>}</section>
+</>}
+</Panel>
+
+<script>
+ const audience=document.querySelector<HTMLElement>('[data-audience]');
+ if(audience){
+  async function refresh(){
+   if(document.hidden)return;
+   try{
+    const response=await fetch('/api/channels/'+audience!.dataset.audience+'/audience');
+    if(!response.ok)throw new Error();
+    const {viewers,connections}=await response.json();
+    audience!.querySelector('[data-viewer-count]')!.textContent=String(viewers);
+    audience!.querySelector('[data-llhls-count]')!.textContent=connections===null?'Sin datos':String(connections);
+   }catch{
+    audience!.querySelector('[data-viewer-count]')!.textContent='Sin datos';
+    audience!.querySelector('[data-llhls-count]')!.textContent='Sin datos';
+   }
+  }
+  void refresh();
+  setInterval(()=>void refresh(),10000);
+  document.addEventListener('visibilitychange',()=>void refresh());
+ }
+</script>

@@ -1,0 +1,28 @@
+---
+import '@fontsource-variable/source-sans-3';
+import '@fontsource/ibm-plex-mono/400.css';
+import '../styles/theme.css';
+import Icon from '../components/Icon.astro';
+import Brand from '../components/Brand.astro';
+import AccountMenu from '../components/AccountMenu.astro';
+import {themeScript} from '../server/theme';
+interface Props{title:string;section?:string;admin?:boolean;description?:string}
+const {title,section='overview',admin=false,description}=Astro.props;
+const {user,channels,channel}=Astro.locals;
+const path=(url:string)=>channel?`${url}?channel=${channel.id}`:url;
+const nav=admin?[
+ ['dashboard','Resumen','/admin/','overview','ADMINISTRACIÓN'],['video','Canales de video','/admin/servicios/','servicios','ADMINISTRACIÓN'],['users','Clientes','/admin/clientes/','clientes','ADMINISTRACIÓN'],['server','Monitor y registros','/admin/monitor/','monitor','ADMINISTRACIÓN'],
+]:[
+ ['video','Panel de emisión','/cliente/','overview','OPERACIÓN'],['link','Conectar OBS','/cliente/conexion/','conexion','OPERACIÓN'],['folder','Continuidad','/cliente/fallback/','fallback','OPERACIÓN'],['list','Biblioteca','/cliente/archivos/','archivos','CONTENIDO'],['chart','Playlist de respaldo','/cliente/playlists/','playlists','CONTENIDO'],['image','Marca de agua','/cliente/marca/','marca','CONTENIDO'],['list','Radio a la carta','/cliente/radio/','radio','CONTENIDO'],
+];
+const group=admin?'Administración':section==='cuenta'?'Cuenta':['archivos','playlists','marca','radio'].includes(section)?'Contenido':'Operación';
+const descriptions:Record<string,string>={overview:admin?'Supervisa los canales y las cuentas de la plataforma.':'Supervisa la emisión y prepara la continuidad de tu señal.',archivos:'Organiza el contenido de tu canal.',playlists:'Prepara el contenido que se emite cuando no hay directo.',fallback:'Revisa las prioridades y la configuración del respaldo.',conexion:'Conecta tu codificador y comprueba la recepción de la señal.',marca:'Configura la identidad visual de tu señal.',radio:'Graba el audio del canal y publícalo por fecha y hora.',clientes:'Gestiona cuentas y canales asignados.',servicios:'Gestiona los canales de video y sus propietarios.',cuenta:'Gestiona tus datos de acceso.',ayuda:'Guía de operación de OpenBroadcast Panel.'};
+const local=['127.0.0.1','localhost'].includes(Astro.url.hostname);
+---
+<!doctype html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width"/><meta name="description" content="OpenBroadcast Panel · Centro de emisión"/><title>{title} · OpenBroadcast Panel</title><script is:inline set:html={themeScript}/></head><body>
+<a class="skip-link" href="#content">Ir al contenido</a><aside class="sidebar" id="sidebar" aria-label="Navegación principal"><Brand href={admin?'/admin/':path('/cliente/')}/><button class="icon-button sidebar-close" data-close-menu aria-label="Cerrar menú"><Icon name="close"/></button>
+{!admin&&channels.length>0&&<label class="channel-picker">CANAL ACTIVO<select data-channel-select aria-label="Canal activo">{channels.map(c=><option value={c.id} selected={channel?.id===c.id}>{c.name}</option>)}</select></label>}
+<nav>{nav.map(([icon,label,href,key,heading],i)=><>{(i===0||nav[i-1][4]!==heading)&&<div class="sidebar-label">{heading}</div>}<a href={admin?href:path(href)} class:list={[{active:section===key}]} aria-current={section===key?'page':undefined}><Icon name={icon} size={21}/><span>{label}</span></a></>)}</nav>
+<div class="sidebar-bottom"><div>{user?.role==='admin'&&!admin&&<a class="sidebar-account" href="/admin/"><Icon name="settings" size={22}/>Administración</a>}<a class="sidebar-account" href="/ayuda/"><Icon name="help" size={22}/>Ayuda</a>{admin&&<div class="admin-switch"><label for="operate-channel">Operar un canal</label><select id="operate-channel" data-admin-channel><option value="">Seleccionar canal…</option>{channels.map(c=><option value={c.id}>{c.name}</option>)}</select><button class="button" type="button" data-operate-channel disabled>Abrir canal <Icon name="arrow" size={16}/></button></div>}</div>{user&&<AccountMenu user={user} bottom/>}</div></aside><button class="sidebar-scrim" data-close-menu aria-label="Cerrar menú" tabindex="-1"></button>
+<header class="topbar"><button class="icon-button mobile-toggle" aria-label="Abrir menú" aria-expanded="false" aria-controls="sidebar" data-menu><Icon name="menu" size={21}/></button><nav class="breadcrumb" aria-label="Ruta de navegación"><a href={admin?'/admin/':path('/cliente/')} aria-label="Inicio del panel"><Icon name="home" size={21}/></a><span>/</span><a class="context-name" href={admin?'/admin/':path('/cliente/')}>{group}</a><span>/</span><strong>{title}</strong></nav><div class="top-actions">{local&&<span class="badge blue">Entorno local</span>}{user&&<AccountMenu user={user}/>}</div></header>
+<main id="content"><div class="page-heading"><div><h1>{title}</h1><p>{description||descriptions[section]||descriptions.overview}</p></div><div class="heading-actions">{Astro.slots.has('actions')?<slot name="actions"/>:!admin&&channel&&section==='overview'&&<a class="button primary" href={path('/cliente/conexion/')}><Icon name="link" size={18}/>Conectar OBS</a>}</div></div><slot/><footer class="app-footer"><span>OpenBroadcast Panel · Centro de emisión</span><span>{admin?'Administración':'Operación del canal'}</span></footer></main><div id="toast" role="status" aria-live="polite" hidden></div><script>import '../scripts/panel';</script></body></html>
