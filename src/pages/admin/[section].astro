@@ -38,7 +38,7 @@ const channels=Astro.locals.channels;
   <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
    <div class="card-body form-fields">
     <label>URL de la API de la estación
-     <input name="stationApi" type="url" maxlength="2048" value={rSettings?.station_api_url || defaultStationApiUrl} placeholder={defaultStationApiUrl}/>
+     <input name="stationApi" type="url" maxlength="2048" value={rSettings?.station_api_url || ''} placeholder={defaultStationApiUrl}/>
     </label>
     <p class="hint">Extrae nombre, stream en vivo e historial musical desde <code>{defaultStationApiUrl}</code>.</p>
     <label>URL del stream en directo (opcional si usas la API)

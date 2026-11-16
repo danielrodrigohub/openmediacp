@@ -21,7 +21,7 @@ export const GET: APIRoute = async ({ params, url }) => {
     });
   }
 
-  const station = await syncStationApi(channel.id, channel.station_api_url || defaultStationApiUrl);
+  const station = await syncStationApi(channel.id, channel.station_api_url);
   const recordings = recordingsFor(channel.id);
   const days = radioDays();
   const requested = url.searchParams.get('fecha');

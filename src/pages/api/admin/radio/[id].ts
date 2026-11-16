@@ -22,7 +22,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (!exists(id)) return Response.json({ error: 'Canal no disponible.' }, { status: 404 });
     const body = await jsonBody(request);
     let source = (typeof body.source === 'string' ? body.source : '').trim();
-    const stationApi = (typeof body.stationApi === 'string' ? body.stationApi : defaultStationApiUrl).trim();
+    const stationApi = (typeof body.stationApi === 'string' ? body.stationApi : '').trim();
     const on = (value: unknown) => value === 'on' || value === true || value === '1';
     const recording = Number(on(body.recording));
     const published = Number(on(body.published));

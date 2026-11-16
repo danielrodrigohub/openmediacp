@@ -1,8 +1,7 @@
 import type { APIRoute } from 'astro';
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { join } from 'node:path';
-import { publicRadio, radioDate, radioDays, radioRoot, recordingInfo } from '../../../server/radio';
+import { publicRadio, radioDate, radioDays, recordingInfo, resolveRecordingPath } from '../../../server/radio';
 
 const noIndex = { 'X-Robots-Tag': 'noindex, nofollow, noarchive' };
 
@@ -12,16 +11,27 @@ const serve: APIRoute = async ({ params, request }) => {
   if (!channel || !recording || !radioDays().includes(radioDate(recording.start))) {
     return new Response(null, { status: 404, headers: noIndex });
   }
+  const filePath = resolveRecordingPath(channel.id, recording.name);
+  if (!filePath) {
+    return new Response(null, { status: 404, headers: noIndex });
+  }
   let file;
   try {
-    file = await open(join(radioRoot, channel.id, recording.name), 'r');
+    file = await open(filePath, 'r');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Response(null, { status: 404, headers: noIndex });
     throw error;
   }
   try {
     const { size } = await file.stat();
-    const headers = new Headers({ ...noIndex, 'Accept-Ranges': 'bytes', 'Content-Type': 'audio/ogg' });
+    const durationSec = Math.max(1, (recording.end - recording.start) / 1000).toFixed(2);
+    const headers = new Headers({
+      ...noIndex,
+      'Accept-Ranges': 'bytes',
+      'Content-Type': 'audio/ogg',
+      'X-Content-Duration': durationSec,
+      'Content-Duration': durationSec,
+    });
     let start = 0;
     let end = size - 1;
     const range = request.headers.get('range');

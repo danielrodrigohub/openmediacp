@@ -1,19 +1,17 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { db } from './db.ts';
 import { dataDir } from './config.ts';
 
 export const radioRoot = join(dataDir, 'radio');
+export const pendingRadioRoot = join(radioRoot, '.pending');
 export const radioTimezone = 'America/Santiago';
 export const defaultStationApiUrl = 'https://cp.streamchileno.cl/api/station/4';
 export const channelPattern = /^[a-f0-9]{16}$/;
-export const recordingPattern = /^(\d{13})-(\d{13})-[a-f0-9]{16}\.ogg$/;
+export const recordingPattern = /^(\d{13})-(\d{13})-([a-f0-9]{16})\.ogg$/;
 const dateFormat = new Intl.DateTimeFormat('en-CA', { timeZone: radioTimezone, year: 'numeric', month: '2-digit', day: '2-digit' });
 const hourFormat = new Intl.DateTimeFormat('es-CL', {
   timeZone: radioTimezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
-const secondFormat = new Intl.DateTimeFormat('es-CL', {
-  timeZone: radioTimezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
 });
 
 export type StationSongNow = {
@@ -120,10 +118,6 @@ export function radioHour(timestamp: number) {
   return hourFormat.format(timestamp);
 }
 
-export function radioSecond(timestamp: number) {
-  return secondFormat.format(timestamp);
-}
-
 export function recordingInfo(name: string): Recording | undefined {
   const match = recordingPattern.exec(name);
   if (!match) return;
@@ -132,19 +126,61 @@ export function recordingInfo(name: string): Recording | undefined {
   if (end > start && end - start <= 3_660_000) return { name, start, end };
 }
 
+export function resolveRecordingPath(channelId: string, recordingName: string): string | null {
+  if (!channelPattern.test(channelId)) return null;
+  const match = recordingPattern.exec(recordingName);
+  if (!match) return null;
+  const directPath = join(radioRoot, channelId, recordingName);
+  if (existsSync(directPath)) return directPath;
+
+  const start = Number(match[1]);
+  const runId = match[3];
+  const startSec = Math.floor(start / 1000);
+  const pendingPath = join(pendingRadioRoot, `${channelId}-${runId}`, `capture-${startSec}.ogg`);
+  if (existsSync(pendingPath)) return pendingPath;
+  return null;
+}
+
 export function recordingsFor(id: string) {
   if (!channelPattern.test(id)) return [];
+  const oldest = radioDays().at(-1)!;
+  const items: Recording[] = [];
+
   try {
-    const oldest = radioDays().at(-1)!;
-    return readdirSync(join(radioRoot, id), { withFileTypes: true })
-      .filter(entry => entry.isFile())
-      .map(entry => recordingInfo(entry.name))
-      .filter((item): item is Recording => Boolean(item && radioDate(item.start) >= oldest))
-      .sort((a, b) => a.start - b.start);
+    for (const entry of readdirSync(join(radioRoot, id), { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const info = recordingInfo(entry.name);
+      if (info && radioDate(info.start) >= oldest) items.push(info);
+    }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
+
+  // Also include active in-progress capture segments from .pending so current-hour audio is immediately available
+  try {
+    const prefix = `${id}-`;
+    for (const dirEntry of readdirSync(pendingRadioRoot, { withFileTypes: true })) {
+      if (!dirEntry.isDirectory() || !dirEntry.name.startsWith(prefix)) continue;
+      const runId = dirEntry.name.slice(prefix.length);
+      if (!/^[a-f0-9]{16}$/.test(runId)) continue;
+      const runDir = join(pendingRadioRoot, dirEntry.name);
+      for (const fileEntry of readdirSync(runDir, { withFileTypes: true })) {
+        if (!fileEntry.isFile()) continue;
+        const capMatch = /^capture-(\d{10})\.ogg$/.exec(fileEntry.name);
+        if (!capMatch) continue;
+        const start = Number(capMatch[1]) * 1000;
+        if (radioDate(start) < oldest) continue;
+        const stat = statSync(join(runDir, fileEntry.name), { throwIfNoEntry: false });
+        if (!stat || stat.size < 1024) continue;
+        const end = Math.min(start + 3_660_000, Math.max(start + 2000, Math.floor(stat.mtimeMs)));
+        if (end > start) {
+          items.push({ name: `${start}-${end}-${runId}.ogg`, start, end });
+        }
+      }
+    }
+  } catch {}
+
+  return items.sort((a, b) => a.start - b.start);
 }
 
 export function validateHttpUrl(value: string): URL | undefined {
@@ -167,7 +203,7 @@ export function deriveNowPlayingUrl(stationApiUrl: string): string | null {
 const insertSong = db.prepare(`INSERT INTO radio_songs(channel_id,played_at,duration,title,artist,text,art,sh_id)
   VALUES(?,?,?,?,?,?,?,?)
   ON CONFLICT(channel_id,played_at) DO UPDATE SET
-    duration= CASE WHEN excluded.duration > 0 THEN excluded.duration ELSE radio_songs.duration END,
+    duration=CASE WHEN excluded.duration > 0 THEN excluded.duration ELSE radio_songs.duration END,
     title=excluded.title,
     artist=excluded.artist,
     text=excluded.text,
@@ -298,7 +334,7 @@ export async function syncStationApi(channelId: string, overrideApiUrl?: string,
   if (!channelPattern.test(channelId)) return {};
   const current = radioSettings(channelId);
   const cached = parseStationData(current?.station_data);
-  const apiUrl = (overrideApiUrl ?? current?.station_api_url ?? defaultStationApiUrl).trim();
+  const apiUrl = (overrideApiUrl ?? current?.station_api_url ?? '').trim();
   if (!apiUrl) return cached;
 
   if (!force && cached.updated_at && Date.now() - cached.updated_at < 15_000) {
@@ -329,7 +365,6 @@ export async function syncStationApi(channelId: string, overrideApiUrl?: string,
 export function matchSongRecording(playedAtSeconds: number, durationSeconds: number, recordings: Recording[]) {
   const songStart = playedAtSeconds * 1000;
   const songEnd = songStart + Math.max(30_000, (durationSeconds || 180) * 1000);
-  // First prefer a recording where the song starts inside [rec.start, rec.end]
   const direct = recordings.find(rec => songStart >= rec.start && songStart <= rec.end);
   if (direct) {
     return {
@@ -339,7 +374,6 @@ export function matchSongRecording(playedAtSeconds: number, durationSeconds: num
       offset: Math.max(0, Math.floor((songStart - direct.start) / 1000)),
     };
   }
-  // Or a recording that overlaps the song playback window
   const overlap = recordings.find(rec => rec.start <= songEnd && rec.end >= songStart);
   if (overlap) {
     return {
