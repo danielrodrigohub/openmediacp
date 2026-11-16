@@ -34,12 +34,12 @@ const radioPath = `/radio/${channel.id}/`;
   <title>{channel.name} · Radio a la carta</title>
 </head>
 <body class="shared-player-page">
-  <header class="public-header"><Brand/></header>
+  <header class="radio-header"><Brand/><div class="radio-identity"><strong>{channel.name} a la Carta</strong><small>Escucha las emisiones de {channel.name}</small></div><nav aria-label="Navegación principal"><a href="#inicio">Inicio</a><a href="#programas">Programas</a><a href="#grabaciones">Grabaciones</a><a href="#radio-date">Calendario</a></nav><label class="radio-search"><Icon name="search"/><input type="search" id="recording-search" placeholder="Buscar horario" aria-label="Buscar grabación por horario"/></label></header>
   <main class="radio-page">
-    <div class="page-heading"><div><p>RADIO A LA CARTA</p><h1>{channel.name}</h1></div></div>
+    <h1 class="sr-only">{channel.name} a la Carta</h1>
     <div class="radio-layout">
-    <section class="card explorer">
-      <div class="card-heading"><div><h2>Explora las grabaciones</h2><p class="hint">Selecciona un día y un horario para escuchar.</p></div></div>
+    <section class="card explorer" id="programas">
+      <div class="card-heading"><div><h2>Explora la programación</h2><p class="hint">Selecciona un día y escucha las emisiones.</p></div></div>
       <div class="card-body">
         <div class="date-controls"><button class="button" id="previous-day" type="button" aria-label="Día anterior">‹</button><label class="date-picker"><Icon name="calendar" size={19}/><span class="sr-only">Elegir fecha</span><input type="date" id="radio-date" value={date} min={days[days.length - 1]} max={days[0]}/></label><button class="button" id="next-day" type="button" aria-label="Día siguiente">›</button></div>
         <nav class="radio-days" aria-label="Fecha de la grabación">
@@ -54,17 +54,21 @@ const radioPath = `/radio/${channel.id}/`;
       </div>
     </section>
     <div class="radio-content">
-      <section class="player-panel" aria-labelledby="player-title">
+      <section class="player-panel" id="inicio" aria-labelledby="player-title">
         <div class="player-art" aria-hidden="true"><Icon name="broadcast" size={52}/></div>
-        <div class="player-main"><span class="player-kicker">RADIO A LA CARTA</span><h2 id="player-title">{channel.name}</h2><p id="radio-selection" aria-live="polite">{selections.length ? `${dateLabel(date)} · ${timeRange(selections[0].start, selections[0].end)} hrs.` : 'Selecciona una grabación o escucha en directo'}</p>
+        <div class="player-main"><div class="player-top"><span id="play-state">{selections.length ? 'Grabación disponible' : 'En directo'}</span><button id="go-live" type="button"><Icon name="broadcast" size={18}/>Volver al directo</button></div><h2 id="player-title">{channel.name}</h2><p id="radio-selection" aria-live="polite">{selections.length ? `${dateLabel(date)} · ${timeRange(selections[0].start, selections[0].end)} hrs.` : 'Selecciona una grabación o escucha en directo'}</p>
           <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="metadata" src={selections.length ? radioPath + selections[0].name : undefined}></audio>
+          <div class="custom-controls" hidden><button id="skip-back" aria-label="Retroceder 15 segundos">↶</button><button id="toggle-play" aria-label="Reproducir">▶</button><button id="skip-forward" aria-label="Avanzar 15 segundos">↷</button><output id="play-time">0:00 / 0:00</output><input id="play-progress" type="range" min="0" max="100" value="0" aria-label="Posición en la grabación"/><label class="volume-control"><Icon name="broadcast" size={18}/><input id="play-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volumen"/></label><button id="share-recording" aria-label="Compartir grabación"><Icon name="external" size={19}/></button></div>
           <p id="radio-error" role="status" hidden>No se pudo cargar el audio. Selecciona el horario para volver a intentarlo.</p>
         </div>
       </section>
       <section class="card live-card"><div class="card-heading"><h2>En directo</h2><span class="hint">Señal de la radio</span></div><div class="card-body live-body"><audio id="radio-live" aria-label="Escuchar en directo" controls preload="none" src={channel.source_url}></audio><button id="radio-live-return" class="button primary" type="button" hidden>Volver al directo</button><p class="hint">Para escuchar una emisión anterior, selecciona una grabación disponible.</p></div></section>
-      <section class="card"><div class="card-heading"><h2>Horario de canciones</h2></div><div class="card-body"><p class="hint">La información de canciones emitidas aún no está disponible para este canal.</p></div></section>
+      <section class="card" id="grabaciones"><div class="card-heading"><h2>Grabaciones del día</h2><span class="hint">Archivos por hora</span></div><div class="recording-chips">{selections.map(item => <button class="button" type="button" data-chip={radioPath + item.name}><Icon name="play" size={16}/>{timeRange(item.start,item.end)}</button>)}{!selections.length && <p class="hint">Aún no hay archivos disponibles.</p>}</div></section>
+      <section class="card songs-panel"><div class="card-heading"><h2>Horario de canciones</h2></div><div class="card-body"><table><thead><tr><th>Hora</th><th>Canción</th><th>Artista</th><th>Duración</th></tr></thead><tbody><tr><td colspan="4">La radio aún no dispone de un registro de canciones emitidas.</td></tr></tbody></table></div></section>
     </div></div>
   </main>
+  <footer class="radio-footer"><Brand/><span>{channel.name} · Radio a la Carta</span><span>Hora de Chile continental</span></footer>
+  <nav class="mobile-radio-nav" aria-label="Navegación móvil"><a href="#inicio"><Icon name="home"/>Inicio</a><a href="#programas"><Icon name="broadcast"/>Programas</a><a href="#grabaciones"><Icon name="list"/>Grabaciones</a><a href="#radio-date"><Icon name="calendar"/>Calendario</a></nav>
   <script>
     const live = document.querySelector<HTMLAudioElement>('#radio-live');
     const liveReturn = document.querySelector<HTMLButtonElement>('#radio-live-return');
@@ -73,13 +77,41 @@ const radioPath = `/radio/${channel.id}/`;
     const error = document.querySelector<HTMLElement>('#radio-error');
     let choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
     let active = 0;
+    let current = audio!;
+    const controls = document.querySelector<HTMLElement>('.custom-controls')!;
+    const toggle = document.querySelector<HTMLButtonElement>('#toggle-play')!;
+    const progress = document.querySelector<HTMLInputElement>('#play-progress')!;
+    const status = document.querySelector<HTMLElement>('#play-state')!;
+    const clock = (seconds: number) => Number.isFinite(seconds) ? `${Math.floor(seconds/60)}:${Math.floor(seconds%60).toString().padStart(2,'0')}` : '0:00';
+    controls.hidden = false;
+    audio!.controls = false;
+    document.querySelector<HTMLElement>('.live-card')!.hidden = true;
+    toggle.onclick = () => { if (!current.getAttribute('src')) current = live!; if (current.paused) void current.play().catch(() => { status.textContent='No se pudo reproducir. Vuelve a intentarlo.'; }); else current.pause(); };
+    document.querySelector<HTMLButtonElement>('#go-live')!.onclick = () => { audio?.pause(); current = live!; live!.load(); void live!.play().catch(() => { status.textContent='No se pudo conectar con la radio'; }); };
+    document.querySelector<HTMLButtonElement>('#skip-back')!.onclick = () => { if(current===audio) current.currentTime=Math.max(0,current.currentTime-15); };
+    document.querySelector<HTMLButtonElement>('#skip-forward')!.onclick = () => { if(current===audio && Number.isFinite(current.duration)) current.currentTime=Math.min(current.duration,current.currentTime+15); };
+    progress.oninput=()=>{if(current===audio && Number.isFinite(current.duration))current.currentTime=Number(progress.value)*current.duration/100;};
+    document.querySelector<HTMLInputElement>('#play-volume')!.oninput=event=>{const volume=Number((event.target as HTMLInputElement).value);audio!.volume=volume;live!.volume=volume;};
+    for(const player of [audio!,live!]) {
+      player.addEventListener('play',()=>{current=player;toggle.textContent='Ⅱ';toggle.setAttribute('aria-label','Pausar');status.textContent=player===live?'En directo':'Reproduciendo';progress.disabled=player===live;});
+      player.addEventListener('pause',()=>{if(current===player){toggle.textContent='▶';toggle.setAttribute('aria-label','Reproducir');status.textContent='Pausado';}});
+      player.addEventListener('waiting',()=>{if(current===player)status.textContent='Cargando audio…';});
+      player.addEventListener('playing',()=>{status.textContent=player===live?'En directo':'Reproduciendo';});
+      player.addEventListener('error',()=>{if(current===player)status.textContent='No se pudo cargar el audio';});
+      player.addEventListener('timeupdate',()=>{if(current!==player)return;document.querySelector('#play-time')!.textContent=player===live?'En directo':`${clock(player.currentTime)} / ${clock(player.duration)}`;progress.value=Number.isFinite(player.duration)?String(player.currentTime/player.duration*100):'0';});
+    }
+    document.querySelector<HTMLButtonElement>('#share-recording')!.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);status.textContent='Enlace copiado';}catch{status.textContent='Copia la dirección de esta página para compartir';}};
+    document.querySelector<HTMLInputElement>('#recording-search')!.oninput=event=>{const query=(event.target as HTMLInputElement).value.trim().toLowerCase();for(const choice of choices)choice.closest('li')!.hidden=!choice.textContent?.toLowerCase().includes(query);};
 
     function play(index: number) {
       if (!audio || !selection || !error) return;
+      if(index < 0 || !choices[index]) return;
       const button = choices[index];
       choices[active].setAttribute('aria-pressed', 'false');
       button.setAttribute('aria-pressed', 'true');
       active = index;
+      current = audio;
+      document.querySelectorAll<HTMLButtonElement>('[data-chip]').forEach(chip=>chip.setAttribute('aria-pressed',String(chip.dataset.chip===button.dataset.radioAudio)));
       error.hidden = true;
       selection.textContent = button.dataset.radioTime || '';
       audio.src = button.dataset.radioAudio || '';
@@ -94,6 +126,8 @@ const radioPath = `/radio/${channel.id}/`;
       const target = event.target as Element;
       const button = target.closest<HTMLButtonElement>('[data-radio-audio]');
       if (button) play(choices.indexOf(button));
+      const chip = target.closest<HTMLButtonElement>('[data-chip]');
+      if(chip){const index=choices.findIndex(choice=>choice.dataset.radioAudio===chip.dataset.chip);if(index>=0)play(index);}
       const day = target.closest<HTMLAnchorElement>('.radio-days a');
       if (day) { event.preventDefault(); void changeDate(new URL(day.href).searchParams.get('fecha') || ''); }
     });
@@ -109,6 +143,7 @@ const radioPath = `/radio/${channel.id}/`;
         const replacement = page.querySelector('.explorer .card-body');
         if (!current || !replacement) return;
         current.innerHTML = replacement.innerHTML;
+        const chips=page.querySelector('.recording-chips');if(chips)document.querySelector('.recording-chips')!.innerHTML=chips.innerHTML;
         choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
         active = 0;
         if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
@@ -143,13 +178,14 @@ const radioPath = `/radio/${channel.id}/`;
 </body>
 </html>
 <style>
-.radio-page { width: min(100%, 1180px); margin: 0 auto; padding: 28px 20px 48px; }
+.radio-header{display:flex;align-items:center;gap:24px;padding:22px 3%;background:white;border-bottom:1px solid #d6dfea}.radio-identity{border-left:1px solid #d6dfea;padding-left:24px;display:grid;min-width:190px}.radio-identity strong{font-size:23px;text-transform:capitalize}.radio-identity small{font-size:13px}.radio-header nav{display:flex;gap:22px;margin-left:auto;font-weight:600;font-size:14px}.radio-header nav a:first-child{background:#075cd6;color:white;padding:8px 16px;border-radius:5px}.radio-header nav a{align-self:center}.radio-search{display:flex;gap:8px;border:1px solid #d6dfea;border-radius:16px;padding:8px 12px}.radio-search input{border:0;width:150px;font:inherit;font-size:13px;min-width:0}.player-top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.player-top>span{background:white;color:#102a50;border-radius:4px;padding:4px 9px;font-size:13px;font-weight:600}.player-top button{border:1px solid white;color:white;background:transparent;display:flex;gap:6px;align-items:center;padding:6px 10px;border-radius:4px}.custom-controls{display:flex;align-items:center;gap:12px;margin-top:25px;flex-wrap:wrap}.custom-controls[hidden]{display:none}.custom-controls button{border:0;background:transparent;color:white;min-width:32px;min-height:44px;font-size:25px;display:grid;place-items:center}.custom-controls #toggle-play{border-radius:50%;width:50px;height:50px;background:white;color:#075cd6;font-size:24px}.custom-controls output{font-size:13px;white-space:nowrap}.custom-controls input{accent-color:white;min-width:0}.custom-controls #play-progress{width:110px;flex:1}.volume-control{display:flex;align-items:center;gap:8px}.volume-control input{width:65px}.recording-chips{display:flex;gap:10px;padding:14px;overflow-x:auto}.recording-chips button{white-space:nowrap;min-height:44px}.songs-panel table{width:100%;border-collapse:collapse}.songs-panel th{background:#eaf0f7;text-align:left;padding:10px;font-size:14px}.songs-panel td{padding:24px 10px;color:#596a83;font-size:14px}.radio-footer{background:#102a50;color:white;display:flex;align-items:center;gap:30px;padding:20px 3%;margin-top:24px}.radio-footer>span:last-child{margin-left:auto;font-size:14px}.mobile-radio-nav{display:none}
+.radio-page { width: min(100%, 1440px); margin: 0 auto; padding: 32px 20px 0;min-height:0; }
 .radio-page>.page-heading { margin-bottom: 20px; }
 .radio-page>.page-heading h1 { margin-bottom: 4px; }
 .radio-layout { display:grid; grid-template-columns:minmax(260px, .85fr) minmax(0, 1.7fr); gap:18px; align-items:start; }
 .radio-content { display:grid; gap:16px; min-width:0; }
 .player-panel { background:#075cd6; color:#fff; padding:24px; border-radius:6px; display:flex; gap:22px; align-items:center; min-height:200px; }
-.player-art { flex:none; width:130px; height:130px; display:grid; place-items:center; color:#fff; background:#102a50; border-radius:5px; }
+.player-art { flex:none; width:150px; height:190px; display:grid; place-items:center; color:#087ff0; background:#102a50; border-radius:5px; }
 .player-main { min-width:0; flex:1; }.player-main h2 {color:#fff; font-size:28px; margin:6px 0}.player-main p {margin:0 0 14px}.player-kicker{font-size:12px;font-weight:700;letter-spacing:.06em}.player-main audio{width:100%}
 .explorer .card-heading p{margin:4px 0 0}.radio-content .card{margin:0}
 .date-controls{display:flex;gap:8px;margin-bottom:14px}.date-controls>button{width:42px;min-height:44px;font-size:24px}.date-picker{display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:0 10px;border:1px solid var(--border);border-radius:4px}.date-picker input{width:100%;min-width:0;border:0;background:transparent;color:var(--text);font:inherit}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.radio-page button:focus-visible,.radio-page a:focus-visible,.radio-page input:focus-visible{outline:3px solid #087ff0;outline-offset:2px}
@@ -171,4 +207,12 @@ const radioPath = `/radio/${channel.id}/`;
 .radio-hours button[aria-pressed="true"] { border-color: var(--accent); color:var(--accent); background:var(--accent-soft); }
 audio { display: block; width: min(100%, 720px); }
 @media(max-width:760px){.radio-layout{display:flex;flex-direction:column}.radio-layout>*,.radio-content{width:100%}.radio-content{order:-1}.player-panel{padding:18px;gap:14px}.player-art{width:72px;height:72px}.player-main h2{font-size:22px}.player-panel{align-items:flex-start}.radio-page{padding:20px 12px 32px}.day-button{min-width:58px;flex:1}.radio-page .card-heading{align-items:flex-start;flex-direction:column}}
+</style>
+<style>
+.recording-chips button[aria-pressed=true]{background:#e4efff;color:#075cd6;border-color:#075cd6}.live-card[hidden]{display:none}.radio-hours li[hidden]{display:none}
+@media(max-width:760px){.radio-layout{display:flex;flex-direction:column}.explorer{display:contents}.explorer>.card-heading{order:3;width:100%;background:white}.explorer>.card-body{display:contents}.date-controls{order:0;width:100%;margin:0}.radio-content{order:1}.radio-days{order:2;width:100%}.recording-day-heading{order:4;width:100%}.radio-hours{order:5;width:100%;background:white}.radio-page{padding-bottom:20px}.radio-footer .brand{color:white}.radio-identity strong{text-transform:capitalize}}
+</style>
+<style>
+@media(max-width:1100px){.radio-header{gap:16px}.radio-search{display:none}.radio-header nav{gap:14px}.player-panel{gap:16px;padding:18px}.player-art{width:100px;height:140px}.radio-layout{grid-template-columns:minmax(250px,.85fr) minmax(0,1.7fr)}}
+@media(max-width:760px){.radio-header{padding:16px;flex-wrap:wrap}.radio-header nav{display:none}.radio-identity{border:0;padding:0;min-width:0}.radio-identity strong{font-size:16px}.radio-identity small{display:none}.radio-layout{display:flex}.player-art{width:72px;height:90px}.player-panel{position:relative;align-items:flex-start}.player-top{flex-wrap:wrap}.player-top>span{font-size:11px}.player-top button{font-size:12px}.custom-controls{gap:8px;margin-top:14px}.custom-controls #play-progress{flex-basis:100%;order:2}.volume-control{display:none}.radio-footer{margin-bottom:65px;flex-wrap:wrap;gap:12px}.radio-footer>span:last-child{margin-left:0}.mobile-radio-nav{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;background:white;border-top:1px solid #d6dfea;padding:10px 0;z-index:10}.mobile-radio-nav a{display:grid;justify-items:center;gap:3px;font-size:11px;color:#102a50}.radio-days{gap:4px}.player-main p{font-size:14px}}
 </style>
