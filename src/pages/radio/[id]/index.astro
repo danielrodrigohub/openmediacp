@@ -36,34 +36,34 @@ const radioPath = `/radio/${channel.id}/`;
 <body class="shared-player-page">
   <header class="public-header"><Brand/></header>
   <main class="radio-page">
-    <div class="page-heading">
-      <div><h1>{channel.name}</h1><p>Radio a la carta</p></div>
-    </div>
-    <section class="card live-card">
-      <div class="card-heading"><h2>En directo</h2><span class="hint">Buffer automático</span></div>
-      <div class="card-body live-body">
-        <p class="live-note">Escucha la señal con unos segundos de margen. Si retrocedes, cambia a la grabación Opus disponible.</p>
-        <audio id="radio-live" controls preload="auto" src={channel.source_url}></audio>
-        <button id="radio-live-return" class="button" type="button" hidden>Volver al directo</button>
-      </div>
-    </section>
-    <section class="card">
-      <div class="card-heading"><h2>Grabaciones</h2><span class="hint">Cortes cada 5 minutos · hora de Chile continental</span></div>
+    <div class="page-heading"><div><p>RADIO A LA CARTA</p><h1>{channel.name}</h1></div></div>
+    <div class="radio-layout">
+    <section class="card explorer">
+      <div class="card-heading"><div><h2>Explora las grabaciones</h2><p class="hint">Selecciona un día y un horario para escuchar.</p></div></div>
       <div class="card-body">
+        <div class="date-controls"><button class="button" id="previous-day" type="button" aria-label="Día anterior">‹</button><label class="date-picker"><Icon name="calendar" size={19}/><span class="sr-only">Elegir fecha</span><input type="date" id="radio-date" value={date} min={days[days.length - 1]} max={days[0]}/></label><button class="button" id="next-day" type="button" aria-label="Día siguiente">›</button></div>
         <nav class="radio-days" aria-label="Fecha de la grabación">
-          {days.map((day, index) => <a href={`${radioPath}?fecha=${day}`} aria-label={index === 0 ? 'Hoy, ' + dateLabel(day) : dateLabel(day)} aria-current={day === date ? 'page' : undefined} class:list={['button', 'day-button', day === date ? 'primary' : '']}><strong>{index === 0 ? 'Hoy' : shortDate.format(calendarDay(day))}</strong><small>{calendarDay(day).getUTCDate()}</small></a>)}
+          {days.map((day, index) => <a href={`${radioPath}?fecha=${day}`} aria-label={index === 0 ? 'Hoy, ' + dateLabel(day) : dateLabel(day)} aria-current={day === date ? 'page' : undefined} class:list={['button', 'day-button', day === date ? 'primary' : '']}><strong>{index === 0 ? 'Hoy' : shortDate.format(calendarDay(day))}</strong></a>)}
         </nav>
         <div class="recording-day-heading"><h3>{dateLabel(date)}</h3><span>{selections.length} {selections.length === 1 ? 'corte disponible' : 'cortes disponibles'}</span></div>
         {selections.length ? <>
-          <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="metadata" src={radioPath + selections[0].name}></audio>
-          <p id="radio-selection" class="hint" aria-live="polite">{timeRange(selections[0].start, selections[0].end)}</p>
           <ul class="radio-hours">
-            {selections.map((item, index) => <li><span class="hour-label">{radioHour(item.start)}</span><button type="button" class="button" data-radio-audio={radioPath + item.name} data-radio-time={timeRange(item.start, item.end)} aria-pressed={index === 0 ? 'true' : 'false'}><Icon name="play" size={18}/><span>{timeRange(item.start, item.end)}</span></button></li>)}
+            {selections.map((item, index) => <li><button type="button" class="button" data-radio-audio={radioPath + item.name} data-radio-time={timeRange(item.start, item.end)} aria-pressed={index === 0 ? 'true' : 'false'}><span class="segment-icon"><Icon name="play" size={18}/></span><span><strong>Grabación</strong><small>{timeRange(item.start, item.end)} hrs.</small></span><span class="row-play" aria-hidden="true">▶</span></button></li>)}
           </ul>
-          <p id="radio-error" class="hint" role="status" hidden>No se pudo cargar el audio. Selecciona el horario para volver a intentarlo.</p>
         </> : <p class="hint">Todavía no hay grabaciones disponibles para esta fecha.</p>}
       </div>
     </section>
+    <div class="radio-content">
+      <section class="player-panel" aria-labelledby="player-title">
+        <div class="player-art" aria-hidden="true"><Icon name="broadcast" size={52}/></div>
+        <div class="player-main"><span class="player-kicker">RADIO A LA CARTA</span><h2 id="player-title">{channel.name}</h2><p id="radio-selection" aria-live="polite">{selections.length ? `${dateLabel(date)} · ${timeRange(selections[0].start, selections[0].end)} hrs.` : 'Selecciona una grabación o escucha en directo'}</p>
+          <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="metadata" src={selections.length ? radioPath + selections[0].name : undefined}></audio>
+          <p id="radio-error" role="status" hidden>No se pudo cargar el audio. Selecciona el horario para volver a intentarlo.</p>
+        </div>
+      </section>
+      <section class="card live-card"><div class="card-heading"><h2>En directo</h2><span class="hint">Señal de la radio</span></div><div class="card-body live-body"><audio id="radio-live" aria-label="Escuchar en directo" controls preload="none" src={channel.source_url}></audio><button id="radio-live-return" class="button primary" type="button" hidden>Volver al directo</button><p class="hint">Para escuchar una emisión anterior, selecciona una grabación disponible.</p></div></section>
+      <section class="card"><div class="card-heading"><h2>Horario de canciones</h2></div><div class="card-body"><p class="hint">La información de canciones emitidas aún no está disponible para este canal.</p></div></section>
+    </div></div>
   </main>
   <script>
     const live = document.querySelector<HTMLAudioElement>('#radio-live');
@@ -71,7 +71,7 @@ const radioPath = `/radio/${channel.id}/`;
     const audio = document.querySelector<HTMLAudioElement>('#radio-audio');
     const selection = document.querySelector<HTMLElement>('#radio-selection');
     const error = document.querySelector<HTMLElement>('#radio-error');
-    const choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
+    let choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
     let active = 0;
 
     function play(index: number) {
@@ -90,7 +90,48 @@ const radioPath = `/radio/${channel.id}/`;
       });
     }
 
-    choices.forEach((button, index) => button.addEventListener('click', () => play(index)));
+    document.addEventListener('click', event => {
+      const target = event.target as Element;
+      const button = target.closest<HTMLButtonElement>('[data-radio-audio]');
+      if (button) play(choices.indexOf(button));
+      const day = target.closest<HTMLAnchorElement>('.radio-days a');
+      if (day) { event.preventDefault(); void changeDate(new URL(day.href).searchParams.get('fecha') || ''); }
+    });
+    const dateInput = document.querySelector<HTMLInputElement>('#radio-date');
+    async function changeDate(date: string, push = true) {
+      if (!dateInput || date < dateInput.min || date > dateInput.max) return;
+      const url = new URL(location.href); url.searchParams.set('fecha', date);
+      try {
+        const response = await fetch(url, { headers: { 'Accept': 'text/html' } });
+        if (!response.ok) throw new Error('date');
+        const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const current = document.querySelector('.explorer .card-body');
+        const replacement = page.querySelector('.explorer .card-body');
+        if (!current || !replacement) return;
+        current.innerHTML = replacement.innerHTML;
+        choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
+        active = 0;
+        if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
+        if (selection) selection.textContent = choices.length ? `Selecciona una grabación del día` : 'No hay grabaciones para esta fecha';
+        if (push) history.pushState({}, '', url);
+      } catch { location.href = url.href; }
+    }
+    document.addEventListener('change', event => {
+      const input = event.target as HTMLInputElement;
+      if (input.id === 'radio-date') void changeDate(input.value);
+    });
+    document.addEventListener('click', event => {
+      const id = (event.target as Element).closest('button')?.id;
+      if (id !== 'previous-day' && id !== 'next-day') return;
+      const input = document.querySelector<HTMLInputElement>('#radio-date');
+      if (!input) return;
+      const day = new Date(input.value + 'T12:00:00Z');
+      day.setUTCDate(day.getUTCDate() + (id === 'previous-day' ? -1 : 1));
+      void changeDate(day.toISOString().slice(0, 10));
+    });
+    window.addEventListener('popstate', () => { void changeDate(new URL(location.href).searchParams.get('fecha') || dateInput?.max || '', false); });
+    live?.addEventListener('play', () => { audio?.pause(); });
+    audio?.addEventListener('play', () => { live?.pause(); if (liveReturn) liveReturn.hidden = false; });
     liveReturn?.addEventListener('click', () => {
       audio?.pause();
       if (live) { live.load(); void live.play().catch(() => {}); }
@@ -105,6 +146,13 @@ const radioPath = `/radio/${channel.id}/`;
 .radio-page { width: min(100%, 1180px); margin: 0 auto; padding: 28px 20px 48px; }
 .radio-page>.page-heading { margin-bottom: 20px; }
 .radio-page>.page-heading h1 { margin-bottom: 4px; }
+.radio-layout { display:grid; grid-template-columns:minmax(260px, .85fr) minmax(0, 1.7fr); gap:18px; align-items:start; }
+.radio-content { display:grid; gap:16px; min-width:0; }
+.player-panel { background:#075cd6; color:#fff; padding:24px; border-radius:6px; display:flex; gap:22px; align-items:center; min-height:200px; }
+.player-art { flex:none; width:130px; height:130px; display:grid; place-items:center; color:#fff; background:#102a50; border-radius:5px; }
+.player-main { min-width:0; flex:1; }.player-main h2 {color:#fff; font-size:28px; margin:6px 0}.player-main p {margin:0 0 14px}.player-kicker{font-size:12px;font-weight:700;letter-spacing:.06em}.player-main audio{width:100%}
+.explorer .card-heading p{margin:4px 0 0}.radio-content .card{margin:0}
+.date-controls{display:flex;gap:8px;margin-bottom:14px}.date-controls>button{width:42px;min-height:44px;font-size:24px}.date-picker{display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:0 10px;border:1px solid var(--border);border-radius:4px}.date-picker input{width:100%;min-width:0;border:0;background:transparent;color:var(--text);font:inherit}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.radio-page button:focus-visible,.radio-page a:focus-visible,.radio-page input:focus-visible{outline:3px solid #087ff0;outline-offset:2px}
 .live-card { margin-block-end: 18px; }
 .radio-page .card { border-radius: 8px; overflow: hidden; }
 .radio-page .card-heading { min-height: 56px; }
@@ -116,10 +164,11 @@ const radioPath = `/radio/${channel.id}/`;
 .recording-day-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
 .recording-day-heading h3 { margin: 16px 0 12px; text-transform:capitalize; }
 .recording-day-heading span,.hour-label { color:var(--muted); font-size:13px; }
-.radio-hours { list-style: none; padding: 0; margin: 12px 0 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
+.radio-hours { list-style: none; padding: 0; margin: 12px 0 0; display:grid; gap:4px; }
 .radio-hours li { display:flex; align-items:center; gap:8px; min-width:0; }
-.radio-hours button { width:100%; justify-content:flex-start; min-height:44px; }
+.radio-hours button { width:100%; justify-content:flex-start; min-height:68px; text-align:left; border-color:transparent; }
+.radio-hours button>span:nth-child(2){display:grid;gap:2px}.radio-hours button small{font-size:13px;color:var(--muted)}.segment-icon{width:42px;height:42px;display:grid;place-items:center;background:#e8f0fc;color:#075cd6;border-radius:4px}.row-play{margin-left:auto;color:#075cd6}
 .radio-hours button[aria-pressed="true"] { border-color: var(--accent); color:var(--accent); background:var(--accent-soft); }
 audio { display: block; width: min(100%, 720px); }
-@media(max-width:600px){.radio-page{padding:20px 12px 32px}.day-button{min-width:58px;flex:1}.radio-page .card-heading{align-items:flex-start;flex-direction:column}.radio-hours{grid-template-columns:1fr}}
+@media(max-width:760px){.radio-layout{display:flex;flex-direction:column}.radio-layout>*,.radio-content{width:100%}.radio-content{order:-1}.player-panel{padding:18px;gap:14px}.player-art{width:72px;height:72px}.player-main h2{font-size:22px}.player-panel{align-items:flex-start}.radio-page{padding:20px 12px 32px}.day-button{min-width:58px;flex:1}.radio-page .card-heading{align-items:flex-start;flex-direction:column}}
 </style>

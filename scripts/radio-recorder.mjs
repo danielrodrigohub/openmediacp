@@ -73,7 +73,7 @@ function start(channel) {
     '-rw_timeout', '15000000', '-analyzeduration', '2000000', '-protocol_whitelist', 'http,https,tcp,tls,crypto',
     '-i', channel.source_url, '-map', '0:a:0', '-vn', '-sn', '-dn', '-map_metadata', '-1',
     '-c:a', 'libopus', '-b:a', '82k', '-vbr', 'off', '-ar', '48000', '-ac', '2',
-    '-f', 'segment', '-segment_time', '300', '-segment_atclocktime', '1',
+    '-f', 'segment', '-segment_time', '3600', '-segment_atclocktime', '1',
     '-reset_timestamps', '1', '-segment_format', 'ogg', '-segment_format_options', 'flush_packets=1', '-strftime', '1', join(path, 'capture-%s.ogg'),
   ], { env: { ...process.env, TZ: 'UTC' }, stdio: 'ignore' });
   const attempt = { channel, runId, path, child, started: Date.now(), killTimer: undefined };

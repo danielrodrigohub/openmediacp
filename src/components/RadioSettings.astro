@@ -24,7 +24,7 @@ const error = Astro.url.searchParams.get('error');
   <div class="card-body radio-settings-body">
     {saved && <p role="status">Configuración guardada.</p>}
     {error && <p role="alert">{error}</p>}
-    <div class="radio-intro"><strong>Graba y publica el audio del canal</strong><p class="hint">La señal se guarda automáticamente en fragmentos de cinco minutos para que la audiencia pueda volver a escucharla.</p></div>
+    <div class="radio-intro"><strong>Graba y publica el audio del canal</strong><p class="hint">La señal se guarda en archivos por hora para que la audiencia pueda volver a escucharla.</p></div>
     {canEdit && <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
       <div class="radio-config-fields">
       <label for="radio-source">URL del audio en directo</label>
@@ -37,8 +37,8 @@ const error = Astro.url.searchParams.get('error');
       <div class="radio-save-row"><button class="button primary" type="submit">Guardar configuración</button>{settings?.published === 1 && channel.enabled === 1 && <a class="text-link" href={`/radio/${channel.id}/`}>Vista previa de Radio a la carta <Icon name="arrow-right" size={16}/></a>}</div>
     </form>}
     {!canEdit && <p class="hint">Un administrador puede configurar la fuente y la publicación de este canal.</p>}
-    <div class="radio-retention"><span class="badge gray">Opus · 82 kb/s</span><span>Disponibles hoy y los últimos cuatro días</span><span>Cortes cada 5 minutos · Chile continental</span></div>
-    {settings?.published === 1 && channel.enabled === 1 &&
+    <div class="radio-retention"><span class="badge gray">Opus · 82 kb/s</span><span>Disponibles hoy y los últimos cuatro días</span><span>Archivos por hora · Chile continental</span></div>
+    {!canEdit && settings?.published === 1 && channel.enabled === 1 &&
       <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta</a>}
   </div>
 </section>
