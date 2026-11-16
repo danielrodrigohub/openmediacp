@@ -4,11 +4,14 @@ import '../../../styles/theme.css';
 import Brand from '../../../components/Brand.astro';
 import Icon from '../../../components/Icon.astro';
 import {
+  matchProgramForRecording,
+  programsForChannel,
   publicRadio,
   radioDate,
   radioDays,
   radioHour,
   recordingsFor,
+  resolveLiveDisplayTitle,
   songsForDate,
   syncStationApi,
 } from '../../../server/radio';
@@ -20,6 +23,8 @@ if (!channel) return new Response('Radio a la carta no disponible.', {
 });
 
 const station = await syncStationApi(channel.id, channel.station_api_url);
+const programs = programsForChannel(channel.id);
+const liveDisplay = resolveLiveDisplayTitle(station, programs);
 const stationName = station.name || channel.name;
 const liveStreamUrl = station.listen_url || channel.source_url || '';
 
@@ -27,7 +32,12 @@ const recordings = recordingsFor(channel.id);
 const days = radioDays();
 const requested = Astro.url.searchParams.get('fecha');
 const date = requested && days.includes(requested) ? requested : days[0];
-const selections = recordings.filter(item => radioDate(item.start) === date);
+const selections = recordings
+  .filter(item => radioDate(item.start) === date)
+  .map(item => {
+    const prog = matchProgramForRecording(programs, item.start, item.end);
+    return { ...item, programName: prog?.name || 'Grabación' };
+  });
 const songs = songsForDate(channel.id, date, selections, station.now_playing?.played_at);
 
 const capitalizeFirst = (value: string) => value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
@@ -57,9 +67,7 @@ const formatSongDuration = (seconds: number) => {
   return `${mins}:${secs}`;
 };
 const radioPath = `/radio/${channel.id}/`;
-const nowPlayingText = station.now_playing
-  ? `${station.now_playing.artist ? station.now_playing.artist + ' — ' : ''}${station.now_playing.title}`
-  : 'Señal en directo';
+const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
 ---
 <!doctype html>
@@ -141,11 +149,12 @@ const nowPlayingArt = station.now_playing?.art || '';
                     data-radio-end={item.end}
                     data-radio-time={timeRange(item.start, item.end)}
                     data-radio-date={dateLabel(date)}
+                    data-radio-program={item.programName}
                     aria-pressed="false"
                   >
                     <span class="segment-icon"><Icon name="play" size={17}/></span>
                     <span class="segment-meta">
-                      <strong>Grabación</strong>
+                      <strong>{item.programName}</strong>
                       <small>{timeRange(item.start, item.end)} hrs.</small>
                     </span>
                     <span class="row-play" aria-hidden="true">▶</span>
@@ -380,7 +389,7 @@ const nowPlayingArt = station.now_playing?.art || '';
                 {selections.length ? selections.map(item => (
                   <tr>
                     <td class="song-time-cell"><strong>{radioHour(item.start)} hrs.</strong></td>
-                    <td class="song-title-td"><strong>Grabación {timeRange(item.start, item.end)} hrs.</strong></td>
+                    <td class="song-title-td"><strong>{item.programName} · {timeRange(item.start, item.end)} hrs.</strong></td>
                     <td class="song-duration-cell">{recordingDurationLabel(item.start, item.end)}</td>
                     <td class="song-action-td">
                       <button
@@ -613,10 +622,13 @@ const nowPlayingArt = station.now_playing?.art || '';
 
       const dateText = button.dataset.radioDate || '';
       const rangeText = button.dataset.radioTime || '';
+      const progName = button.dataset.radioProgram && button.dataset.radioProgram !== 'Grabación'
+        ? `${button.dataset.radioProgram} · `
+        : '';
       setSubtitleText(
         customSubtitle
           ? `${customSubtitle} · ${rangeText} hrs.`
-          : `${dateText ? dateText + ' · ' : ''}${rangeText} hrs.`
+          : `${progName}${dateText ? dateText + ' · ' : ''}${rangeText} hrs.`
       );
 
       setArtwork(customArt || liveTrackArt);
@@ -1067,10 +1079,10 @@ const nowPlayingArt = station.now_playing?.art || '';
             liveStreamUrl = data.station.listenUrl;
             if (!live.getAttribute('src')) live.src = liveStreamUrl;
           }
-          if (data.station.nowPlaying) {
+          if (data.station.liveTitle || data.station.nowPlaying) {
             const np = data.station.nowPlaying;
-            liveTrackTitle = `${np.artist ? np.artist + ' — ' : ''}${np.title}`;
-            liveTrackArt = np.art || '';
+            liveTrackTitle = data.station.liveTitle || (np ? `${np.artist ? np.artist + ' — ' : ''}${np.title}` : 'Señal en directo');
+            liveTrackArt = np?.art || '';
             if (mode === 'live') {
               setSubtitleText(liveTrackTitle);
               setArtwork(liveTrackArt);

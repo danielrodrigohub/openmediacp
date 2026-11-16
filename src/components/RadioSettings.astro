@@ -1,7 +1,24 @@
 ---
-import { defaultStationApiUrl, parseStationData, radioSettings, syncStationApi } from '../server/radio';
+import {
+  chileClock,
+  defaultStationApiUrl,
+  formatClipFilename,
+  formatProgramDaysLabel,
+  matchProgramForRecording,
+  parseStationData,
+  programsForChannel,
+  radioDate,
+  radioDays,
+  radioHour,
+  radioSettings,
+  recordingsFor,
+  resolveLiveDisplayTitle,
+  songsForDate,
+  syncStationApi,
+} from '../server/radio';
 import Icon from './Icon.astro';
 import type { Channel } from '../server/config';
+
 interface Props { channel: Channel }
 const { channel } = Astro.props;
 let settings = radioSettings(channel.id);
@@ -9,137 +26,1036 @@ const apiUrl = settings?.station_api_url || '';
 const station = apiUrl ? await syncStationApi(channel.id, apiUrl) : {};
 settings = radioSettings(channel.id);
 const stationInfo = Object.keys(station).length ? station : parseStationData(settings?.station_data);
+
+const programs = programsForChannel(channel.id);
+const liveStatus = resolveLiveDisplayTitle(stationInfo, programs);
+const allRecordings = recordingsFor(channel.id);
+const days = radioDays();
+const today = days[0];
+const recentRecordings = [...allRecordings].reverse().slice(0, 40).map(rec => {
+  const prog = matchProgramForRecording(programs, rec.start, rec.end);
+  const dateStr = radioDate(rec.start);
+  const startHhmm = radioHour(rec.start);
+  const endHhmm = radioHour(rec.end) === startHhmm ? radioHour(rec.start + 60_000) : radioHour(rec.end);
+  const durMin = Math.max(1, Math.round((rec.end - rec.start) / 60_000));
+  return {
+    ...rec,
+    dateStr,
+    startHhmm,
+    endHhmm,
+    durMin,
+    programName: prog?.name || 'Grabación general',
+    programSlug: prog?.name || stationInfo.name || channel.name,
+  };
+});
+
+const recentSongs = apiUrl
+  ? days.flatMap(d => {
+      const dayRecs = allRecordings.filter(r => radioDate(r.start) === d);
+      return songsForDate(channel.id, d, dayRecs, stationInfo.now_playing?.played_at).map(s => ({
+        ...s,
+        dateStr: d,
+        startHhmm: radioHour(s.played_at * 1000),
+        endHhmm: radioHour((s.played_at + Math.max(60, s.duration || 180)) * 1000),
+      }));
+    }).slice(0, 50)
+  : [];
+
 const canEdit = Astro.locals.user?.role === 'admin';
 const recent = settings && Date.now() - settings.updated_at < 10 * 60_000;
-const states: Record<string,string> = {
+const states: Record<string, string> = {
   connecting: 'Conectando con la radio',
   recording: 'Grabación activa',
   reconnecting: 'Reintentando la fuente',
   disk_full: 'Pausada por falta de espacio',
   waiting: 'Grabador listo',
 };
-const state = !channel.enabled ? 'Canal desactivado' : !settings?.recording ? 'Grabación desactivada' :
-  (recent && states[settings.state]) || states[settings.state] || states.waiting;
-const saved = Astro.url.searchParams.get('saved') === '1';
-const error = Astro.url.searchParams.get('error');
+const state = !channel.enabled
+  ? 'Canal desactivado'
+  : !settings?.recording
+    ? 'Grabación desactivada'
+    : (recent && states[settings.state]) || states[settings.state] || states.waiting;
+
 const effectiveStream = settings?.source_url || stationInfo.listen_url || '';
+const nowClock = chileClock();
+const defaultClipDate = recentRecordings[0]?.dateStr || today;
+const defaultClipStart = recentRecordings[0]?.startHhmm || '08:00';
+const defaultClipEnd = recentRecordings[0]?.endHhmm || '09:00';
+const defaultClipProg = liveStatus.activeProgram?.name || recentRecordings[0]?.programName !== 'Grabación general'
+  ? (liveStatus.activeProgram?.name || recentRecordings[0]?.programName || 'PROGRAMA')
+  : (stationInfo.name || channel.name);
+const defaultFilenamePreview = formatClipFilename(defaultClipDate, defaultClipStart, defaultClipProg);
+
+const formatSongDuration = (seconds: number) => {
+  if (!seconds || seconds <= 0) return '—';
+  return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
+};
 ---
-<section class="card radio-settings">
-  <div class="card-heading">
-    <h2>Grabación y API de la estación</h2>
-    <span class:list={['badge', state === states.recording ? 'green' : 'gray']}>{state}</span>
-  </div>
-  <div class="card-body radio-settings-body">
-    {saved && <p role="status">Configuración guardada.</p>}
-    {error && <p role="alert">{error}</p>}
-    <div class="radio-intro">
-      <strong>Conecta la API de la radio, graba por bloques y publica Radio a la carta</strong>
-      <p class="hint">Sincroniza los metadatos de la emisora (nombre, stream en vivo e historial musical) desde la API de la estación y guarda automáticamente el archivo de audio para escuchar emisiones pasadas.</p>
+<div class="radio-admin-workspace" data-channel-id={channel.id}>
+  <!-- Resumen superior -->
+  <div class="summary-grid radio-kpi-grid">
+    <div class="summary-tile">
+      <span class="summary-icon"><Icon name="broadcast" size={21}/></span>
+      <div>
+        <p>Estado de grabación</p>
+        <strong>{state}</strong>
+        <small>Opus · 82 kbps · Retención 5 días</small>
+      </div>
     </div>
 
-    {stationInfo.name && (
-      <div class="station-api-preview" aria-label="Datos obtenidos de la API de la estación">
-        <div class="station-api-header">
+    <div class="summary-tile">
+      <span class="summary-icon"><Icon name="music" size={21}/></span>
+      <div>
+        <p>{liveStatus.activeProgram ? `Programa al aire (${liveStatus.activeProgram.start_time}–${liveStatus.activeProgram.end_time})` : 'Emisión actual'}</p>
+        <strong class="kpi-truncate" title={liveStatus.title}>{liveStatus.title}</strong>
+        <small>
+          {stationInfo.name || channel.name}
+          {typeof stationInfo.listeners === 'number' ? ` · ${stationInfo.listeners} oyentes` : ''}
+        </small>
+      </div>
+    </div>
+
+    <div class="summary-tile">
+      <span class="summary-icon"><Icon name="clock" size={21}/></span>
+      <div>
+        <p>Archivo y programas</p>
+        <strong>{allRecordings.length} {allRecordings.length === 1 ? 'corte' : 'cortes'} · {programs.length} {programs.length === 1 ? 'programa' : 'programas'}</strong>
+        <small>
+          {settings?.published === 1 && channel.enabled === 1 ? (
+            <a class="text-link kpi-link" href={`/radio/${channel.id}/`} target="_blank" rel="noopener">
+              Abrir página pública <Icon name="external" size={14}/>
+            </a>
+          ) : (
+            <span>Hora actual Chile: {nowClock.hhmm} hrs.</span>
+          )}
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <div class="radio-admin-columns">
+    <!-- COLUMNA IZQUIERDA: Recortador MP3 y Programas -->
+    <div class="radio-admin-col">
+      <!-- 1. Recortador de Audio MP3 -->
+      <section class="card">
+        <div class="card-heading">
           <div>
-            <span class="badge green">API conectada</span>
-            <h3>{stationInfo.name}</h3>
+            <h2>Recortar y descargar audio (.MP3)</h2>
+            <p class="hint">Genera un corte exacto por fecha y hora con formato <code>AAAA-MM-DD_HH:MM_PROG.MP3</code>.</p>
           </div>
-          {stationInfo.url && <a class="text-link" href={stationInfo.url} target="_blank" rel="noopener noreferrer">Sitio web <Icon name="external" size={15}/></a>}
+          <span class="badge blue">MP3 · 128 kbps</span>
         </div>
-        <dl class="station-api-grid">
-          <div>
-            <dt>Stream en directo (API)</dt>
-            <dd class="mono">{stationInfo.listen_url || 'No informado'}</dd>
-          </div>
-          <div>
-            <dt>Sonando ahora</dt>
-            <dd>{stationInfo.now_playing ? `${stationInfo.now_playing.artist ? stationInfo.now_playing.artist + ' — ' : ''}${stationInfo.now_playing.title}` : 'Sin metadatos de canción'}</dd>
-          </div>
-          <div>
-            <dt>Formato / Bitrate</dt>
-            <dd>{stationInfo.format ? `${stationInfo.format.toUpperCase()}${stationInfo.bitrate ? ` · ${stationInfo.bitrate} kbps` : ''}` : 'Audio continuo'}</dd>
-          </div>
-          <div>
-            <dt>Oyentes actuales</dt>
-            <dd>{typeof stationInfo.listeners === 'number' ? `${stationInfo.listeners} conectados` : '—'}</dd>
-          </div>
-        </dl>
-      </div>
-    )}
+        <div class="card-body clipper-body">
+          <form id="radio-clip-form" action={`/api/admin/radio/${channel.id}`} method="GET" target="_blank">
+            <input type="hidden" name="action" value="clip"/>
+            <div class="clipper-grid">
+              <label>
+                Fecha del audio
+                <select name="date" id="clip-date" class="field-input" required>
+                  {days.map(d => (
+                    <option value={d} selected={d === defaultClipDate}>
+                      {d === today ? `${d} (Hoy)` : d}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-    {canEdit && <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
-      <div class="radio-config-fields">
-        <label for="radio-station-api">URL de la API de la estación</label>
-        <input
-          id="radio-station-api"
-          name="stationApi"
-          type="url"
-          maxlength="2048"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder={defaultStationApiUrl}
-          value={apiUrl}
-          aria-describedby="radio-station-api-help"
-        />
-        <p id="radio-station-api-help" class="hint">
-          Ejemplo: <code>{defaultStationApiUrl}</code>. Obtiene datos de la emisora, el stream principal para volver al presente y el historial de canciones.
-        </p>
+              <label>
+                Nombre de programa / etiqueta
+                <input
+                  type="text"
+                  name="program"
+                  id="clip-program"
+                  class="field-input"
+                  maxlength="50"
+                   list="channel-programs-list"
+                  value={defaultClipProg}
+                  placeholder="Ej: MATINAL"
+                  required
+                />
+                <datalist id="channel-programs-list">
+                  {programs.map(p => <option value={p.name}/>)}
+                </datalist>
+              </label>
 
-        <label for="radio-source">URL del audio en directo (opcional si usas la API)</label>
-        <input
-          id="radio-source"
-          name="source"
-          type="url"
-          maxlength="2048"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder={stationInfo.listen_url || 'https://cp.streamchileno.cl/listen/radio_riquelme_1350_am/radio.mp3'}
-          value={effectiveStream}
-          aria-describedby="radio-source-help"
-        />
-        <p id="radio-source-help" class="hint">
-          Si lo dejas en blanco, se usará automáticamente el <code>listen_url</code> entregado por la API de la estación.
-        </p>
+              <label>
+                Hora de inicio (Chile)
+                <input
+                  type="time"
+                  name="start"
+                  id="clip-start"
+                  class="field-input"
+                  value={defaultClipStart}
+                  required
+                />
+              </label>
 
-        <label class="radio-check"><input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>Grabar continuamente</label>
-        <label class="radio-check"><input type="checkbox" name="published" checked={Boolean(settings?.published)}/>Publicar la página de Radio a la carta</label>
-      </div>
-      <div data-form-result role="status" aria-live="polite"></div>
-      <div class="radio-save-row">
-        <button class="button primary" type="submit">Guardar y sincronizar estación</button>
-        {settings?.published === 1 && channel.enabled === 1 && <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta <Icon name="arrow-right" size={16}/></a>}
-      </div>
-    </form>}
-    {!canEdit && <p class="hint">Un administrador puede configurar la API de la estación, la fuente de audio y la publicación de este canal.</p>}
-    <div class="radio-retention">
-      <span class="badge gray">Opus · 82 kb/s</span>
-      <span>Disponibles hoy y los últimos cuatro días</span>
-      <span>Sincronización con API e historial de canciones · Hora de Chile continental</span>
+              <label>
+                Hora de término (Chile)
+                <input
+                  type="time"
+                  name="end"
+                  id="clip-end"
+                  class="field-input"
+                  value={defaultClipEnd}
+                  required
+                />
+              </label>
+            </div>
+
+            <div class="clip-preview-strip">
+              <div class="clip-filename-box">
+                <small>Archivo a generar:</small>
+                <code id="clip-filename-preview">{defaultFilenamePreview}</code>
+              </div>
+              <button type="submit" class="button primary" disabled={!allRecordings.length}>
+                <Icon name="down" size={17}/>
+                Descargar corte MP3
+              </button>
+            </div>
+          </form>
+
+          <div class="admin-audio-preview" id="admin-preview-box" hidden={!recentRecordings.length}>
+            <div class="admin-preview-head">
+              <strong id="admin-preview-label">
+                Vista previa: {recentRecordings[0] ? `${recentRecordings[0].dateStr} · ${recentRecordings[0].startHhmm} – ${recentRecordings[0].endHhmm} hrs. (${recentRecordings[0].programName})` : 'Selecciona un audio grabado'}
+              </strong>
+              <span class="hint">Puedes escuchar el tramo antes de recortar</span>
+            </div>
+            <audio
+              id="admin-preview-audio"
+              controls
+              preload="none"
+              src={recentRecordings[0] ? `/api/admin/radio/${channel.id}?action=audio&recording=${encodeURIComponent(recentRecordings[0].name)}` : undefined}
+            ></audio>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Programación de Programas (Reemplazo de Metadata Pegado) -->
+      <section class="card">
+        <div class="card-heading">
+          <div>
+            <h2>Programas de la estación</h2>
+            <p class="hint">Renombra automáticamente los bloques y reemplaza el metadata en vivo cuando queda pegado desde RadioDJ.</p>
+          </div>
+          <span class="badge gray">{programs.length} {programs.length === 1 ? 'programa' : 'programas'}</span>
+        </div>
+
+        <div class="card-body programs-body">
+          {canEdit && (
+            <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload id="add-program-form" class="program-form">
+              <input type="hidden" name="action" value="add-program"/>
+              <input type="hidden" name="days" id="program-days-input" value="1,2,3,4,5"/>
+
+              <div class="program-form-grid">
+                <label class="prog-name-field">
+                  Nombre del programa
+                  <input name="name" class="field-input" maxlength="80" placeholder="Ej: Matinal Riquelme / Noticias" required/>
+                </label>
+                <label>
+                  Hora inicio
+                  <input name="startTime" type="time" class="field-input" value="08:00" required/>
+                </label>
+                <label>
+                  Hora término
+                  <input name="endTime" type="time" class="field-input" value="12:00" required/>
+                </label>
+              </div>
+
+              <div class="program-days-row">
+                <span class="days-label">Días de emisión:</span>
+                <div class="day-toggles" role="group" aria-label="Días del programa">
+                  {[
+                    { d: 1, l: 'Lun' },
+                    { d: 2, l: 'Mar' },
+                    { d: 3, l: 'Mié' },
+                    { d: 4, l: 'Jue' },
+                    { d: 5, l: 'Vie' },
+                    { d: 6, l: 'Sáb' },
+                    { d: 0, l: 'Dom' },
+                  ].map(({ d, l }) => (
+                    <button
+                      type="button"
+                      class:list={['day-chip', d >= 1 && d <= 5 ? 'is-on' : '']}
+                      data-day-toggle={d}
+                      aria-pressed={d >= 1 && d <= 5 ? 'true' : 'false'}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div class="day-presets">
+                  <button type="button" class="text-link small-preset" data-day-preset="1,2,3,4,5">L–V</button>
+                  <button type="button" class="text-link small-preset" data-day-preset="6,0">Fin de semana</button>
+                  <button type="button" class="text-link small-preset" data-day-preset="1,2,3,4,5,6,0">Todos</button>
+                </div>
+              </div>
+
+              <div class="program-submit-row">
+                <label class="check-label">
+                  <input type="checkbox" name="overrideMetadata" checked/>
+                  <span>Forzar nombre del programa en la página pública (evita metadata pegado de RadioDJ al salir en vivo)</span>
+                </label>
+                <button type="submit" class="button primary small">
+                  <Icon name="plus" size={16}/>
+                  Agregar programa
+                </button>
+              </div>
+              <div data-form-result role="status" aria-live="polite"></div>
+            </form>
+          )}
+
+          {programs.length ? (
+            <div class="table-wrap programs-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Programa</th>
+                    <th>Días</th>
+                    <th>Horario</th>
+                    <th>Metadata en vivo</th>
+                    {canEdit && <th></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {programs.map(prog => {
+                    const isOnAir = liveStatus.activeProgram?.id === prog.id;
+                    return (
+                      <tr>
+                        <td>
+                          <strong>{prog.name}</strong>
+                          {isOnAir && <span class="badge green prog-live-badge">Al aire</span>}
+                        </td>
+                        <td>{formatProgramDaysLabel(prog.days)}</td>
+                        <td class="mono">{prog.start_time} – {prog.end_time}</td>
+                        <td>
+                          <span class:list={['badge', prog.override_metadata ? 'blue' : 'gray']}>
+                            {prog.override_metadata ? 'Reemplaza metadata' : 'Solo archivo'}
+                          </span>
+                        </td>
+                        {canEdit && (
+                          <td class="prog-actions-cell">
+                            <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
+                              <input type="hidden" name="action" value="delete-program"/>
+                              <input type="hidden" name="programId" value={prog.id}/>
+                              <button type="submit" class="button small" aria-label={`Eliminar ${prog.name}`}>
+                                Eliminar
+                              </button>
+                            </form>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p class="hint empty-programs-note">
+              Aún no has agregado programas. Agrega los programas de la emisora para etiquetar los bloques grabados y reemplazar el metadata en vivo automáticamente.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
-    {!canEdit && settings?.published === 1 && channel.enabled === 1 &&
-      <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta</a>}
+
+    <!-- COLUMNA DERECHA: Audios Grabados / Canciones Reproducidas + Configuración API -->
+    <div class="radio-admin-col">
+      <!-- 3. Audios grabados y Canciones reproducidas -->
+      <section class="card">
+        <div class="card-heading admin-tabs-heading">
+          <div>
+            <h2>Audios grabados y canciones reproducidas</h2>
+            <p class="hint">Selecciona cualquier grabación o canción para previsualizarla o enviarla al recortador MP3.</p>
+          </div>
+          <div class="admin-tab-buttons" role="tablist">
+            <button
+              type="button"
+              class="button small is-active-tab"
+              role="tab"
+              aria-selected="true"
+              data-admin-tab="recordings"
+            >
+              Audios grabados ({recentRecordings.length})
+            </button>
+            <button
+              type="button"
+              class="button small"
+              role="tab"
+              aria-selected="false"
+              data-admin-tab="songs"
+            >
+              Canciones ({recentSongs.length})
+            </button>
+          </div>
+        </div>
+
+        <!-- Panel Tab 1: Audios grabados -->
+        <div class="card-body admin-list-panel" id="admin-tab-recordings">
+          {recentRecordings.length ? (
+            <div class="table-wrap admin-scroll-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha y hora</th>
+                    <th>Programa</th>
+                    <th>Duración</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentRecordings.map(rec => (
+                    <tr>
+                      <td>
+                        <strong>{rec.startHhmm} – {rec.endHhmm} hrs.</strong>
+                        <small class="block-sub">{rec.dateStr === today ? 'Hoy' : rec.dateStr}</small>
+                      </td>
+                      <td>
+                        <span class="badge gray">{rec.programName}</span>
+                      </td>
+                      <td class="mono">{rec.durMin} min</td>
+                      <td>
+                        <div class="button-row compact-actions">
+                          <button
+                            type="button"
+                            class="button small"
+                            data-preview-audio={`/api/admin/radio/${channel.id}?action=audio&recording=${encodeURIComponent(rec.name)}`}
+                            data-preview-title={`${rec.dateStr} · ${rec.startHhmm} – ${rec.endHhmm} hrs. (${rec.programName})`}
+                          >
+                            <Icon name="play" size={13}/>
+                            Escuchar
+                          </button>
+                          <button
+                            type="button"
+                            class="button small outline"
+                            data-fill-clip
+                            data-clip-date={rec.dateStr}
+                            data-clip-start={rec.startHhmm}
+                            data-clip-end={rec.endHhmm}
+                            data-clip-prog={rec.programSlug}
+                            data-clip-audio={`/api/admin/radio/${channel.id}?action=audio&recording=${encodeURIComponent(rec.name)}`}
+                          >
+                            Recortar MP3
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p class="hint">Todavía no hay audios grabados para este canal. Activa la grabación continua abajo.</p>
+          )}
+        </div>
+
+        <!-- Panel Tab 2: Canciones reproducidas -->
+        <div class="card-body admin-list-panel" id="admin-tab-songs" hidden>
+          {recentSongs.length ? (
+            <div class="table-wrap admin-scroll-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Canción / Artista</th>
+                    <th>Duración</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentSongs.map(song => (
+                    <tr>
+                      <td>
+                        <strong>{song.startHhmm}</strong>
+                        <small class="block-sub">{song.dateStr === today ? 'Hoy' : song.dateStr}</small>
+                      </td>
+                      <td>
+                        <div class="admin-song-cell">
+                          {song.art && <img src={song.art} alt="" class="admin-song-thumb" loading="lazy"/>}
+                          <div>
+                            <strong>{song.title}</strong>
+                            <small class="block-sub">{song.artist || stationInfo.name || channel.name}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="mono">{formatSongDuration(song.duration)}</td>
+                      <td>
+                        {song.recording ? (
+                          <button
+                            type="button"
+                            class="button small outline"
+                            data-fill-clip
+                            data-clip-date={song.dateStr}
+                            data-clip-start={song.startHhmm}
+                            data-clip-end={song.endHhmm}
+                            data-clip-prog={`${song.artist ? song.artist + ' ' : ''}${song.title}`}
+                            data-clip-audio={`/api/admin/radio/${channel.id}?action=audio&recording=${encodeURIComponent(song.recording.name)}#t=${song.recording.offset}`}
+                          >
+                            Recortar canción
+                          </button>
+                        ) : (
+                          <span class="hint">Sin archivo grabado</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p class="hint">
+              {apiUrl
+                ? 'Aún no hay canciones registradas para esta emisora.'
+                : 'Configura la URL de la API de la estación abajo para sincronizar las canciones reproducidas.'}
+            </p>
+          )}
+        </div>
+      </section>
+
+      <!-- 4. Configuración de la Estación y Grabador -->
+      <section class="card radio-settings">
+        <div class="card-heading">
+          <div>
+            <h2>Fuente de audio y API de la estación</h2>
+            <p class="hint">Configura el servidor de la emisora y la publicación de Radio a la carta.</p>
+          </div>
+          {stationInfo.name && <span class="badge green">API conectada</span>}
+        </div>
+        <div class="card-body radio-settings-body">
+          {stationInfo.name && (
+            <div class="station-compact-bar">
+              <div>
+                <strong>{stationInfo.name}</strong>
+                <small class="mono">{stationInfo.listen_url || effectiveStream}</small>
+              </div>
+              {stationInfo.url && (
+                <a class="text-link" href={stationInfo.url} target="_blank" rel="noopener noreferrer">
+                  Sitio web <Icon name="external" size={14}/>
+                </a>
+              )}
+            </div>
+          )}
+
+          {canEdit ? (
+            <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
+              <div class="radio-config-fields">
+                <label for="radio-station-api">URL de la API de la estación (opcional)</label>
+                <input
+                  id="radio-station-api"
+                  name="stationApi"
+                  type="url"
+                  class="field-input"
+                  maxlength="2048"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder={defaultStationApiUrl}
+                  value={apiUrl}
+                />
+                <p class="hint">
+                  Ej: <code>{defaultStationApiUrl}</code>. Sincroniza nombre, stream en vivo e historial musical de cualquier servidor StreamChileno / AzuraCast.
+                </p>
+
+                <label for="radio-source">URL del audio en directo</label>
+                <input
+                  id="radio-source"
+                  name="source"
+                  type="url"
+                  class="field-input"
+                  maxlength="2048"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder={stationInfo.listen_url || 'https://cp.streamchileno.cl/radio/8040/radio.mp3'}
+                  value={effectiveStream}
+                />
+                <p class="hint">
+                  Si usas la API y dejas este campo en blanco, tomará automáticamente el <code>listen_url</code> de la estación.
+                </p>
+
+                <div class="radio-checks-group">
+                  <label class="radio-check">
+                    <input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>
+                    <span>Grabar continuamente en archivos por hora</span>
+                  </label>
+                  <label class="radio-check">
+                    <input type="checkbox" name="published" checked={Boolean(settings?.published)}/>
+                    <span>Publicar la página de Radio a la carta</span>
+                  </label>
+                </div>
+              </div>
+              <div data-form-result role="status" aria-live="polite"></div>
+              <div class="radio-save-row">
+                <button class="button primary" type="submit">Guardar configuración</button>
+                {settings?.published === 1 && channel.enabled === 1 && (
+                  <a class="text-link" href={`/radio/${channel.id}/`} target="_blank" rel="noopener">
+                    Abrir Radio a la carta <Icon name="arrow-right" size={16}/>
+                  </a>
+                )}
+              </div>
+            </form>
+          ) : (
+            <p class="hint">Un administrador puede configurar la API de la estación, la fuente de audio y la publicación de este canal.</p>
+          )}
+        </div>
+      </section>
+    </div>
   </div>
-</section>
+</div>
+
+<script>
+  const clipDate = document.querySelector<HTMLSelectElement>('#clip-date');
+  const clipStart = document.querySelector<HTMLInputElement>('#clip-start');
+  const clipEnd = document.querySelector<HTMLInputElement>('#clip-end');
+  const clipProg = document.querySelector<HTMLInputElement>('#clip-program');
+  const clipPreview = document.querySelector<HTMLElement>('#clip-filename-preview');
+  const previewBox = document.querySelector<HTMLElement>('#admin-preview-box');
+  const previewAudio = document.querySelector<HTMLAudioElement>('#admin-preview-audio');
+  const previewLabel = document.querySelector<HTMLElement>('#admin-preview-label');
+
+  function sanitizeSlug(val: string) {
+    return (
+      val
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40) || 'PROGRAMA'
+    );
+  }
+
+  function updateFilenamePreview() {
+    if (!clipDate || !clipStart || !clipProg || !clipPreview) return;
+    const d = clipDate.value || 'AAAA-MM-DD';
+    const s = (clipStart.value || '00:00').slice(0, 5);
+    const p = sanitizeSlug(clipProg.value || 'PROGRAMA');
+    clipPreview.textContent = `${d}_${s}_${p}.MP3`;
+  }
+
+  [clipDate, clipStart, clipEnd, clipProg].forEach(el => {
+    el?.addEventListener('input', updateFilenamePreview);
+    el?.addEventListener('change', updateFilenamePreview);
+  });
+
+  // Day chip toggles for adding a program
+  const daysInput = document.querySelector<HTMLInputElement>('#program-days-input');
+  const dayChips = [...document.querySelectorAll<HTMLButtonElement>('[data-day-toggle]')];
+
+  function syncDaysInput() {
+    if (!daysInput) return;
+    const active = dayChips
+      .filter(btn => btn.classList.contains('is-on'))
+      .map(btn => btn.dataset.dayToggle);
+    daysInput.value = active.join(',');
+  }
+
+  dayChips.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const on = !btn.classList.contains('is-on');
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', String(on));
+      syncDaysInput();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-day-preset]').forEach(presetBtn => {
+    presetBtn.addEventListener('click', () => {
+      const set = new Set((presetBtn.dataset.dayPreset || '').split(','));
+      dayChips.forEach(chip => {
+        const on = set.has(chip.dataset.dayToggle || '');
+        chip.classList.toggle('is-on', on);
+        chip.setAttribute('aria-pressed', String(on));
+      });
+      syncDaysInput();
+    });
+  });
+
+  // Tabs switching (Audios grabados vs Canciones)
+  const tabBtns = [...document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]')];
+  const tabRecordings = document.querySelector<HTMLElement>('#admin-tab-recordings');
+  const tabSongs = document.querySelector<HTMLElement>('#admin-tab-songs');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.adminTab;
+      tabBtns.forEach(b => {
+        const active = b === btn;
+        b.classList.toggle('is-active-tab', active);
+        b.setAttribute('aria-selected', String(active));
+      });
+      if (tabRecordings) tabRecordings.hidden = target !== 'recordings';
+      if (tabSongs) tabSongs.hidden = target !== 'songs';
+    });
+  });
+
+  // Preview audio & 1-click fill into MP3 Clipper
+  document.addEventListener('click', event => {
+    const target = event.target as Element;
+
+    const previewBtn = target.closest<HTMLButtonElement>('[data-preview-audio]');
+    if (previewBtn && previewAudio && previewBox) {
+      const url = previewBtn.dataset.previewAudio || '';
+      const title = previewBtn.dataset.previewTitle || 'Vista previa';
+      previewBox.hidden = false;
+      if (previewLabel) previewLabel.textContent = `Vista previa: ${title}`;
+      if (previewAudio.getAttribute('src') !== url) {
+        previewAudio.src = url;
+        previewAudio.load();
+      }
+      void previewAudio.play().catch(() => {});
+      return;
+    }
+
+    const fillBtn = target.closest<HTMLButtonElement>('[data-fill-clip]');
+    if (fillBtn) {
+      if (clipDate && fillBtn.dataset.clipDate) clipDate.value = fillBtn.dataset.clipDate;
+      if (clipStart && fillBtn.dataset.clipStart) clipStart.value = fillBtn.dataset.clipStart;
+      if (clipEnd && fillBtn.dataset.clipEnd) clipEnd.value = fillBtn.dataset.clipEnd;
+      if (clipProg && fillBtn.dataset.clipProg) clipProg.value = fillBtn.dataset.clipProg;
+      updateFilenamePreview();
+
+      if (fillBtn.dataset.clipAudio && previewAudio && previewBox) {
+        previewBox.hidden = false;
+        if (previewLabel) {
+          previewLabel.textContent = `Listo para recortar: ${fillBtn.dataset.clipDate} · ${fillBtn.dataset.clipStart} – ${fillBtn.dataset.clipEnd}`;
+        }
+        previewAudio.src = fillBtn.dataset.clipAudio;
+        previewAudio.load();
+      }
+      document.querySelector('#radio-clip-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+</script>
+
 <style>
-.radio-settings{overflow:hidden;border-radius:8px}
-.radio-settings-body{display:grid;gap:20px}
-.radio-intro{padding:16px 18px;border-left:3px solid var(--accent);background:var(--surface-soft);border-radius:4px}
-.radio-intro>strong{font-size:16px;color:var(--text)}
-.radio-intro p{margin:5px 0 0}
-.station-api-preview{border:1px solid var(--border);border-radius:6px;padding:16px;background:var(--surface-soft);display:grid;gap:14px}
-.station-api-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.station-api-header h3{margin:6px 0 0;font-size:18px}
-.station-api-grid{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.station-api-grid>div{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:10px 12px}
-.station-api-grid dt{font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
-.station-api-grid dd{margin:0;font-size:14px;font-weight:600;color:var(--heading);overflow-wrap:anywhere}
-.radio-settings form{display:grid;gap:18px;margin:0}
-.radio-config-fields{display:grid;gap:10px;justify-items:start}
-.radio-settings form input[type="url"]{width:min(100%,720px);min-height:42px}
-.radio-settings form p{margin:0}
-.radio-check{display:flex;align-items:center;gap:9px;min-height:32px}
-.radio-save-row{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.radio-save-row .text-link{display:inline-flex;align-items:center;gap:6px}
-.radio-retention{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:16px;color:var(--muted);font-size:13px}
-@media(max-width:600px){.radio-save-row{align-items:stretch;flex-direction:column}.radio-retention{align-items:flex-start;flex-direction:column;gap:8px}}
+.radio-admin-workspace {
+  display: grid;
+  gap: 20px;
+}
+.radio-kpi-grid {
+  margin-bottom: 0;
+}
+.kpi-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+.kpi-link {
+  font-size: 13px;
+}
+
+.radio-admin-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.radio-admin-col {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.radio-admin-col > .card {
+  margin-bottom: 0;
+}
+.card-heading p.hint {
+  margin: 3px 0 0;
+  font-size: 13px;
+}
+
+/* Clipper Form */
+.clipper-body {
+  display: grid;
+  gap: 16px;
+}
+.clipper-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.clipper-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.clip-preview-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+.clip-filename-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.clip-filename-box small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.clip-filename-box code {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+.admin-audio-preview {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 8px;
+}
+.admin-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.admin-audio-preview audio {
+  width: 100%;
+  height: 38px;
+}
+
+/* Programs Form & Table */
+.programs-body {
+  display: grid;
+  gap: 18px;
+}
+.program-form {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.program-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(110px, .75fr) minmax(110px, .75fr);
+  gap: 12px;
+}
+.program-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.program-days-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.days-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.day-toggles {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.day-chip {
+  min-width: 40px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.day-chip.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.day-presets {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+.small-preset {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+}
+.program-submit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.program-submit-row .check-label {
+  font-size: 13px;
+  flex: 1;
+  min-width: 220px;
+}
+.prog-live-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.prog-actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+.empty-programs-note {
+  margin: 0;
+}
+
+/* Recordings & Songs Tabs */
+.admin-tabs-heading {
+  flex-wrap: wrap;
+}
+.admin-tab-buttons {
+  display: flex;
+  gap: 6px;
+}
+.admin-tab-buttons .is-active-tab {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.admin-list-panel {
+  padding: 0;
+}
+.admin-list-panel > p.hint {
+  padding: 18px;
+  margin: 0;
+}
+.admin-scroll-table {
+  max-height: 380px;
+  overflow-y: auto;
+}
+.admin-scroll-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.block-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.compact-actions {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.admin-song-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-song-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* Station Config Card */
+.radio-settings-body {
+  display: grid;
+  gap: 16px;
+}
+.station-compact-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 5px;
+  flex-wrap: wrap;
+}
+.station-compact-bar strong {
+  display: block;
+  font-size: 15px;
+}
+.station-compact-bar small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin-top: 2px;
+}
+.radio-settings form {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+}
+.radio-config-fields {
+  display: grid;
+  gap: 8px;
+}
+.radio-config-fields label:not(.radio-check) {
+  font-weight: 600;
+  font-size: 14px;
+  margin-top: 4px;
+}
+.radio-config-fields p.hint {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.radio-checks-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.radio-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  font-size: 14px;
+}
+.radio-save-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .radio-admin-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .clipper-grid,
+  .program-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .compact-actions {
+    flex-wrap: wrap;
+  }
+}
 </style>

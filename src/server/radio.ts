@@ -436,3 +436,177 @@ export function songsForDate(channelId: string, date: string, recordings: Record
       recording: matchSongRecording(row.played_at, row.duration, recordings),
     }));
 }
+
+export type RadioProgram = {
+  id: string;
+  channel_id: string;
+  name: string;
+  days: string; // e.g. '1,2,3,4,5' (0=Dom, 1=Lun, ..., 6=Sáb)
+  start_time: string; // 'HH:MM'
+  end_time: string;   // 'HH:MM'
+  override_metadata: number; // 1 or 0
+  created_at: number;
+};
+
+const weekdayEnMap: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+const chileFullPartsFormat = new Intl.DateTimeFormat('en-US', {
+  timeZone: radioTimezone,
+  weekday: 'short',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+export function chileClock(timestampMs = Date.now()) {
+  const parts = chileFullPartsFormat.formatToParts(timestampMs);
+  const get = (type: string) => parts.find(p => p.type === type)?.value || '';
+  const weekday = weekdayEnMap[get('weekday')] ?? 0;
+  const hour = Number(get('hour')) || 0;
+  const minute = Number(get('minute')) || 0;
+  const second = Number(get('second')) || 0;
+  return {
+    weekday,
+    year: Number(get('year')),
+    month: Number(get('month')),
+    day: Number(get('day')),
+    hour,
+    minute,
+    second,
+    minutes: hour * 60 + minute,
+    hhmm: `${get('hour')}:${get('minute')}`,
+  };
+}
+
+export function parseTimeMinutes(hhmm: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(hhmm.trim());
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+export function parseChileDateTime(dateStr: string, timeStr: string): number | null {
+  const dMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  const tMatch = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(timeStr.trim());
+  if (!dMatch || !tMatch) return null;
+  const year = Number(dMatch[1]);
+  const month = Number(dMatch[2]);
+  const day = Number(dMatch[3]);
+  const hour = Number(tMatch[1]);
+  const minute = Number(tMatch[2]);
+  const second = Number(tMatch[3] || '0');
+
+  const approxUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  const local = chileClock(approxUtc);
+  const localAsUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+  const offsetMs = localAsUtc - approxUtc;
+  return approxUtc - offsetMs;
+}
+
+export function programsForChannel(channelId: string): RadioProgram[] {
+  if (!channelPattern.test(channelId)) return [];
+  return db.prepare(`SELECT id,channel_id,name,days,start_time,end_time,override_metadata,created_at
+    FROM radio_programs WHERE channel_id=? ORDER BY start_time, name`).all(channelId) as RadioProgram[];
+}
+
+export function matchProgramAt(programs: RadioProgram[], timestampMs = Date.now()): RadioProgram | undefined {
+  if (!programs.length) return;
+  const { weekday, minutes } = chileClock(timestampMs);
+  const prevWeekday = (weekday + 6) % 7;
+
+  for (const prog of programs) {
+    const startMin = parseTimeMinutes(prog.start_time);
+    const endMin = parseTimeMinutes(prog.end_time);
+    if (startMin === null || endMin === null) continue;
+    const daySet = new Set(
+      prog.days
+        .split(',')
+        .map(s => Number(s.trim()))
+        .filter(n => Number.isInteger(n) && n >= 0 && n <= 6)
+    );
+    if (endMin > startMin) {
+      if (daySet.has(weekday) && minutes >= startMin && minutes < endMin) return prog;
+    } else if (endMin < startMin) {
+      // Overnight program (e.g. 22:00 to 02:00)
+      if (daySet.has(weekday) && minutes >= startMin) return prog;
+      if (daySet.has(prevWeekday) && minutes < endMin) return prog;
+    }
+  }
+  return undefined;
+}
+
+export function matchProgramForRecording(programs: RadioProgram[], startMs: number, endMs: number): RadioProgram | undefined {
+  if (!programs.length) return;
+  const midMs = Math.round((startMs + endMs) / 2);
+  return matchProgramAt(programs, midMs) || matchProgramAt(programs, startMs + 60_000);
+}
+
+export function isMetadataStuck(nowPlaying?: StationSongNow | null): boolean {
+  if (!nowPlaying) return true;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ageSec = nowSec - (nowPlaying.played_at || 0);
+  if (nowPlaying.duration > 0 && ageSec > nowPlaying.duration + 90) return true;
+  if (ageSec > 12 * 60) return true;
+  return false;
+}
+
+export function resolveLiveDisplayTitle(station: StationInfo, programs: RadioProgram[], nowMs = Date.now()): {
+  title: string;
+  activeProgram?: RadioProgram;
+  overridden: boolean;
+} {
+  const activeProgram = matchProgramAt(programs, nowMs);
+  const stuck = isMetadataStuck(station.now_playing);
+  const rawTrack = station.now_playing
+    ? `${station.now_playing.artist ? station.now_playing.artist + ' — ' : ''}${station.now_playing.title}`
+    : '';
+
+  if (activeProgram && (activeProgram.override_metadata === 1 || stuck || !rawTrack)) {
+    return {
+      title: activeProgram.name,
+      activeProgram,
+      overridden: true,
+    };
+  }
+
+  return {
+    title: rawTrack || activeProgram?.name || 'Señal en directo',
+    activeProgram,
+    overridden: false,
+  };
+}
+
+export function formatProgramDaysLabel(daysStr: string): string {
+  const names: Record<number, string> = { 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 0: 'Dom' };
+  const days = daysStr
+    .split(',')
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isInteger(n) && n >= 0 && n <= 6);
+  const key = [...new Set(days)].sort().join(',');
+  if (key === '1,2,3,4,5') return 'Lunes a Viernes';
+  if (key === '0,6') return 'Sábado y Domingo';
+  if (key === '0,1,2,3,4,5,6') return 'Todos los días';
+  return [1, 2, 3, 4, 5, 6, 0].filter(d => days.includes(d)).map(d => names[d]).join(', ') || 'Sin días';
+}
+
+export function sanitizeProgramSlug(value: string): string {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return normalized || 'PROGRAMA';
+}
+
+export function formatClipFilename(dateStr: string, startTimeStr: string, programName: string): string {
+  const hhmm = startTimeStr.trim().slice(0, 5);
+  const prog = sanitizeProgramSlug(programName);
+  return `${dateStr}_${hhmm}_${prog}.MP3`;
+}

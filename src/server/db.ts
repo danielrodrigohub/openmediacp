@@ -49,7 +49,18 @@ CREATE TABLE IF NOT EXISTS radio_songs(
  sh_id INTEGER NOT NULL DEFAULT 0,
  PRIMARY KEY(channel_id, played_at)
 );
-CREATE INDEX IF NOT EXISTS radio_songs_channel_played ON radio_songs(channel_id, played_at DESC);`);
+CREATE INDEX IF NOT EXISTS radio_songs_channel_played ON radio_songs(channel_id, played_at DESC);
+CREATE TABLE IF NOT EXISTS radio_programs(
+ id TEXT PRIMARY KEY,
+ channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+ name TEXT NOT NULL,
+ days TEXT NOT NULL DEFAULT '1,2,3,4,5',
+ start_time TEXT NOT NULL,
+ end_time TEXT NOT NULL,
+ override_metadata INTEGER NOT NULL DEFAULT 1,
+ created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS radio_programs_channel ON radio_programs(channel_id);`);
 
 for (const [name, type] of Object.entries({
   station_api_url: "TEXT NOT NULL DEFAULT ''",

@@ -1,10 +1,13 @@
 import type { APIRoute } from 'astro';
 import {
+  matchProgramForRecording,
+  programsForChannel,
   publicRadio,
   radioDate,
   radioDays,
   radioHour,
   recordingsFor,
+  resolveLiveDisplayTitle,
   songsForDate,
   syncStationApi,
 } from '../../../server/radio';
@@ -21,6 +24,9 @@ export const GET: APIRoute = async ({ params, url }) => {
   }
 
   const station = await syncStationApi(channel.id, channel.station_api_url);
+  const programs = programsForChannel(channel.id);
+  const liveDisplay = resolveLiveDisplayTitle(station, programs);
+
   const recordings = recordingsFor(channel.id);
   const days = radioDays();
   const requested = url.searchParams.get('fecha');
@@ -28,7 +34,11 @@ export const GET: APIRoute = async ({ params, url }) => {
   const selections = recordings.filter(item => radioDate(item.start) === date);
   const songs = songsForDate(channel.id, date, selections, station.now_playing?.played_at);
   const radioPath = `/radio/${channel.id}/`;
-  const timeRange = (start: number, end: number) => `${radioHour(start)} – ${radioHour(end)}`;
+  const timeRange = (start: number, end: number) => {
+    const s = radioHour(start);
+    const e = radioHour(end);
+    return s === e ? `${s} – ${radioHour(start + 60_000)}` : `${s} – ${e}`;
+  };
 
   return new Response(
     JSON.stringify({
@@ -43,15 +53,22 @@ export const GET: APIRoute = async ({ params, url }) => {
         streamerName: station.streamer_name || '',
         nowPlaying: station.now_playing || null,
         playingNext: station.playing_next || null,
+        liveTitle: liveDisplay.title,
+        activeProgram: liveDisplay.activeProgram?.name || null,
+        metadataOverridden: liveDisplay.overridden,
       },
       date,
-      recordings: selections.map(rec => ({
-        name: rec.name,
-        url: radioPath + rec.name,
-        start: rec.start,
-        end: rec.end,
-        range: timeRange(rec.start, rec.end),
-      })),
+      recordings: selections.map(rec => {
+        const matchedProg = matchProgramForRecording(programs, rec.start, rec.end);
+        return {
+          name: rec.name,
+          url: radioPath + rec.name,
+          start: rec.start,
+          end: rec.end,
+          range: timeRange(rec.start, rec.end),
+          programName: matchedProg?.name || 'Grabación',
+        };
+      }),
       songs: songs.map(song => ({
         playedAt: song.played_at,
         time: radioHour(song.played_at * 1000),
