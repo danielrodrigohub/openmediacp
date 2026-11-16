@@ -51,14 +51,14 @@ const radioPath = `/radio/${channel.id}/`;
       <div class="card-heading"><h2>Grabaciones</h2><span class="hint">Cortes cada 5 minutos · hora de Chile continental</span></div>
       <div class="card-body">
         <nav class="radio-days" aria-label="Fecha de la grabación">
-          {days.map((day, index) => <a href={`${radioPath}?fecha=${day}`} aria-label={index === 0 ? 'Hoy, ' + dateLabel(day) : dateLabel(day)} aria-current={day === date ? 'page' : undefined} class:list={['button', day === date ? 'primary' : '']}>{index === 0 ? 'Hoy' : shortDate.format(calendarDay(day))}</a>)}
+          {days.map((day, index) => <a href={`${radioPath}?fecha=${day}`} aria-label={index === 0 ? 'Hoy, ' + dateLabel(day) : dateLabel(day)} aria-current={day === date ? 'page' : undefined} class:list={['button', 'day-button', day === date ? 'primary' : '']}><strong>{index === 0 ? 'Hoy' : shortDate.format(calendarDay(day))}</strong><small>{calendarDay(day).getUTCDate()}</small></a>)}
         </nav>
-        <h3>{dateLabel(date)}</h3>
+        <div class="recording-day-heading"><h3>{dateLabel(date)}</h3><span>{selections.length} {selections.length === 1 ? 'corte disponible' : 'cortes disponibles'}</span></div>
         {selections.length ? <>
           <audio id="radio-audio" aria-label="Reproductor de grabaciones" controls preload="metadata" src={radioPath + selections[0].name}></audio>
           <p id="radio-selection" class="hint" aria-live="polite">{timeRange(selections[0].start, selections[0].end)}</p>
           <ul class="radio-hours">
-            {selections.map((item, index) => <li><button type="button" class="button" data-radio-audio={radioPath + item.name} data-radio-time={timeRange(item.start, item.end)} aria-pressed={index === 0 ? 'true' : 'false'}><Icon name="play" size={18}/>{timeRange(item.start, item.end)}</button></li>)}
+            {selections.map((item, index) => <li><span class="hour-label">{radioHour(item.start)}</span><button type="button" class="button" data-radio-audio={radioPath + item.name} data-radio-time={timeRange(item.start, item.end)} aria-pressed={index === 0 ? 'true' : 'false'}><Icon name="play" size={18}/><span>{timeRange(item.start, item.end)}</span></button></li>)}
           </ul>
           <p id="radio-error" class="hint" role="status" hidden>No se pudo cargar el audio. Selecciona el horario para volver a intentarlo.</p>
         </> : <p class="hint">Todavía no hay grabaciones disponibles para esta fecha.</p>}
@@ -102,15 +102,24 @@ const radioPath = `/radio/${channel.id}/`;
 </body>
 </html>
 <style>
-.radio-page { width: min(100%, 1040px); margin: 0 auto; padding: 24px 16px; }
+.radio-page { width: min(100%, 1180px); margin: 0 auto; padding: 28px 20px 48px; }
+.radio-page>.page-heading { margin-bottom: 20px; }
+.radio-page>.page-heading h1 { margin-bottom: 4px; }
 .live-card { margin-block-end: 18px; }
+.radio-page .card { border-radius: 8px; overflow: hidden; }
+.radio-page .card-heading { min-height: 56px; }
 .live-body { display: grid; gap: 12px; }
 .live-note { margin: 0; color: var(--muted, #52637d); }
-.radio-days, .radio-hours { display: flex; flex-wrap: wrap; gap: 8px; }
-.radio-days a { white-space: nowrap; }
-.radio-page h3 { margin: 18px 0 12px; }
-.radio-hours { list-style: none; padding: 0; }
-.radio-hours button[aria-pressed="true"] { border-color: var(--primary, #2459C4); }
-audio { display: block; width: min(100%, 600px); }
-.radio-hours button { min-width: 112px; justify-content: center; }
+.radio-days { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.day-button { min-width: 72px; min-height: 56px; flex-direction: column; gap: 1px; }
+.day-button small { font-size: 12px; opacity: .8; }
+.recording-day-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.recording-day-heading h3 { margin: 16px 0 12px; text-transform:capitalize; }
+.recording-day-heading span,.hour-label { color:var(--muted); font-size:13px; }
+.radio-hours { list-style: none; padding: 0; margin: 12px 0 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
+.radio-hours li { display:flex; align-items:center; gap:8px; min-width:0; }
+.radio-hours button { width:100%; justify-content:flex-start; min-height:44px; }
+.radio-hours button[aria-pressed="true"] { border-color: var(--accent); color:var(--accent); background:var(--accent-soft); }
+audio { display: block; width: min(100%, 720px); }
+@media(max-width:600px){.radio-page{padding:20px 12px 32px}.day-button{min-width:58px;flex:1}.radio-page .card-heading{align-items:flex-start;flex-direction:column}.radio-hours{grid-template-columns:1fr}}
 </style>
