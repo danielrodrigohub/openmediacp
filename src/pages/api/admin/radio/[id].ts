@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { audit, db } from '../../../../server/db';
 import { InputError, apiError, jsonBody } from '../../../../server/http';
-import { channelPattern, defaultStationApiUrl, fetchStationApiData, parseStationData, radioSettings, syncStationApi, validateHttpUrl } from '../../../../server/radio';
+import { channelPattern, fetchStationApiData, parseStationData, radioSettings, syncStationApi, validateHttpUrl } from '../../../../server/radio';
 
 const exists = (id: string) => channelPattern.test(id) && !!db.prepare('SELECT 1 FROM channels WHERE id=?').get(id);
 

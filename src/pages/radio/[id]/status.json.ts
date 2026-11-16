@@ -1,6 +1,5 @@
 import type { APIRoute } from 'astro';
 import {
-  defaultStationApiUrl,
   publicRadio,
   radioDate,
   radioDays,

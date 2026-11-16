@@ -39,10 +39,6 @@ const dateLabel = (day: string) => capitalizeFirst(dateFormat.format(calendarDay
 const shortDate = new Intl.DateTimeFormat('es-CL', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
 const shortLabel = (day: string) => capitalizeFirst(shortDate.format(calendarDay(day)).replace(/\./g, ''));
 const timeRange = (start: number, end: number) => `${radioHour(start)} – ${radioHour(end)}`;
-const durationMinutes = (start: number, end: number) => {
-  const mins = Math.max(1, Math.round((end - start) / 60_000));
-  return `${mins} min`;
-};
 const formatSongDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '—';
   const mins = Math.floor(seconds / 60);
@@ -194,13 +190,17 @@ const nowPlayingArt = station.now_playing?.art || '';
               </button>
 
               <button id="toggle-play" type="button" class="play-btn" aria-label="Reproducir">
-                <svg class="icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <polygon points="8,5 20,12 8,19"/>
-                </svg>
-                <svg class="icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
-                  <rect x="6.5" y="5" width="4" height="14" rx="1"/>
-                  <rect x="13.5" y="5" width="4" height="14" rx="1"/>
-                </svg>
+                <span class="icon-play">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <polygon points="8,5 20,12 8,19"/>
+                  </svg>
+                </span>
+                <span class="icon-pause" hidden>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <rect x="6.5" y="5" width="4" height="14" rx="1"/>
+                    <rect x="13.5" y="5" width="4" height="14" rx="1"/>
+                  </svg>
+                </span>
               </button>
 
               <button id="skip-forward" type="button" class="skip-btn" aria-label="Avanzar 15 segundos" title="Avanzar 15 segundos">
@@ -360,8 +360,8 @@ const nowPlayingArt = station.now_playing?.art || '';
     const selection = document.querySelector<HTMLElement>('#radio-selection')!;
     const error = document.querySelector<HTMLElement>('#radio-error')!;
     const toggle = document.querySelector<HTMLButtonElement>('#toggle-play')!;
-    const iconPlay = toggle.querySelector<SVGElement>('.icon-play')!;
-    const iconPause = toggle.querySelector<SVGElement>('.icon-pause')!;
+    const iconPlay = toggle.querySelector<HTMLElement>('.icon-play')!;
+    const iconPause = toggle.querySelector<HTMLElement>('.icon-pause')!;
     const progress = document.querySelector<HTMLInputElement>('#play-progress')!;
     const playTime = document.querySelector<HTMLElement>('#play-time')!;
     const statusBadge = document.querySelector<HTMLElement>('#play-state')!;
