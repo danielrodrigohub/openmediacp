@@ -42,6 +42,9 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
           source = fetched.info.listen_url;
         }
       }
+    } else {
+      stationData = {};
+      db.prepare('DELETE FROM radio_songs WHERE channel_id=?').run(id);
     }
 
     if (source) {

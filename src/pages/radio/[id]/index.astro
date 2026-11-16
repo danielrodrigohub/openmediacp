@@ -38,7 +38,18 @@ const calendarDay = (day: string) => new Date(day + 'T12:00:00Z');
 const dateLabel = (day: string) => capitalizeFirst(dateFormat.format(calendarDay(day)));
 const shortDate = new Intl.DateTimeFormat('es-CL', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
 const shortLabel = (day: string) => shortDate.format(calendarDay(day)).replace(/\./g, '');
-const timeRange = (start: number, end: number) => `${radioHour(start)} – ${radioHour(end)}`;
+const timeRange = (start: number, end: number) => {
+  const s = radioHour(start);
+  const e = radioHour(end);
+  return s === e ? `${s} – ${radioHour(start + 60_000)}` : `${s} – ${e}`;
+};
+const recordingDurationLabel = (start: number, end: number) => {
+  const totalSec = Math.max(1, Math.round((end - start) / 1000));
+  if (totalSec < 60) return `${totalSec} s`;
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return secs > 0 ? `${mins}:${secs.toString().padStart(2, '0')} min` : `${mins} min`;
+};
 const formatSongDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '—';
   const mins = Math.floor(seconds / 60);
@@ -264,7 +275,7 @@ const nowPlayingArt = station.now_playing?.art || '';
           </div>
         </section>
 
-        <section class="card songs-panel" id="canciones">
+        <section class="card songs-panel" id="canciones" hidden={!channel.station_api_url && !songs.length}>
           <div class="card-heading">
             <h2>Horario de canciones</h2>
             <span class="hint">Sincronizado con la estación y grabaciones</span>
@@ -334,6 +345,56 @@ const nowPlayingArt = station.now_playing?.art || '';
                   <tr>
                     <td colspan="5" class="songs-empty-cell">
                       La radio aún no dispone de un registro de canciones emitidas.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card songs-panel" id="horario-grabaciones" hidden={Boolean(channel.station_api_url || songs.length)}>
+          <div class="card-heading">
+            <h2>Horario de grabaciones</h2>
+            <span class="hint">{dateLabel(date)} · Hora de Chile continental</span>
+          </div>
+          <div class="card-body songs-table-wrap">
+            <table>
+              <colgroup>
+                <col class="col-time"/>
+                <col class="col-title"/>
+                <col class="col-duration"/>
+                <col class="col-action"/>
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Inicio</th>
+                  <th>Tramo de grabación</th>
+                  <th>Duración</th>
+                  <th>Escuchar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selections.length ? selections.map(item => (
+                  <tr>
+                    <td class="song-time-cell"><strong>{radioHour(item.start)} hrs.</strong></td>
+                    <td class="song-title-td"><strong>Grabación {timeRange(item.start, item.end)} hrs.</strong></td>
+                    <td class="song-duration-cell">{recordingDurationLabel(item.start, item.end)}</td>
+                    <td class="song-action-td">
+                      <button
+                        type="button"
+                        class="button small song-seek-btn"
+                        data-chip={radioPath + item.name}
+                      >
+                        <Icon name="play" size={13}/>
+                        <span>{timeRange(item.start, item.end)}</span>
+                      </button>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colspan="4" class="songs-empty-cell">
+                      Todavía no hay tramos grabados disponibles para esta fecha.
                     </td>
                   </tr>
                 )}
@@ -880,9 +941,17 @@ const nowPlayingArt = station.now_playing?.art || '';
         if (chips && document.querySelector('.recording-chips')) {
           document.querySelector('.recording-chips')!.innerHTML = chips.innerHTML;
         }
-        const songsSection = page.querySelector('#canciones');
-        if (songsSection && document.querySelector('#canciones')) {
-          document.querySelector('#canciones')!.innerHTML = songsSection.innerHTML;
+        const songsSection = page.querySelector('#canciones') as HTMLElement | null;
+        const localSongs = document.querySelector<HTMLElement>('#canciones');
+        if (songsSection && localSongs) {
+          localSongs.innerHTML = songsSection.innerHTML;
+          localSongs.hidden = songsSection.hidden;
+        }
+        const recSchedule = page.querySelector('#horario-grabaciones') as HTMLElement | null;
+        const localRecSchedule = document.querySelector<HTMLElement>('#horario-grabaciones');
+        if (recSchedule && localRecSchedule) {
+          localRecSchedule.innerHTML = recSchedule.innerHTML;
+          localRecSchedule.hidden = recSchedule.hidden;
         }
 
         choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
@@ -917,13 +986,18 @@ const nowPlayingArt = station.now_playing?.art || '';
     }
 
     function renderSongsTable(songs: any[]) {
+      const songsCard = document.querySelector<HTMLElement>('#canciones');
+      const recCard = document.querySelector<HTMLElement>('#horario-grabaciones');
       const tbody = document.querySelector<HTMLElement>('#songs-tbody');
       if (!tbody) return;
       const searchVal = (document.querySelector<HTMLInputElement>('#recording-search')?.value || '').trim().toLowerCase();
       if (!Array.isArray(songs) || !songs.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="songs-empty-cell">La radio aún no dispone de un registro de canciones emitidas.</td></tr>';
+        if (songsCard) songsCard.hidden = true;
+        if (recCard) recCard.hidden = false;
         return;
       }
+      if (songsCard) songsCard.hidden = false;
+      if (recCard) recCard.hidden = true;
       tbody.innerHTML = songs.map(song => {
         const artist = song.artist || stationFallbackName;
         const durLabel = song.duration > 0 ? clock(song.duration) : '—';

@@ -58,3 +58,16 @@ for (const [name, type] of Object.entries({
   const existing = new Set((db.prepare('PRAGMA table_info(radio_channels)').all() as { name: string }[]).map(x => x.name));
   if (!existing.has(name)) db.exec(`ALTER TABLE radio_channels ADD COLUMN ${name} ${type}`);
 }
+
+// Cleanup any non-Riquelme channels that inherited the temporary station 4 default migration
+try {
+  const mismatched = db.prepare(`
+    SELECT c.id FROM channels c JOIN radio_channels r ON r.channel_id=c.id
+    WHERE r.station_api_url='https://cp.streamchileno.cl/api/station/4'
+      AND lower(c.name) NOT LIKE '%riquelme%'
+  `).all() as { id: string }[];
+  for (const row of mismatched) {
+    db.prepare("UPDATE radio_channels SET station_api_url='', station_data='{}' WHERE channel_id=?").run(row.id);
+    db.prepare('DELETE FROM radio_songs WHERE channel_id=?').run(row.id);
+  }
+} catch {}
