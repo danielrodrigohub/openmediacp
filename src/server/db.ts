@@ -31,8 +31,30 @@ CREATE TABLE IF NOT EXISTS playout_runtime(channel_id TEXT PRIMARY KEY,cycle INT
 db.exec(`CREATE TABLE IF NOT EXISTS radio_channels(
  channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
  source_url TEXT NOT NULL,
+ station_api_url TEXT NOT NULL DEFAULT 'https://cp.streamchileno.cl/api/station/4',
+ station_data TEXT NOT NULL DEFAULT '{}',
  recording INTEGER NOT NULL DEFAULT 0,
  published INTEGER NOT NULL DEFAULT 0,
  state TEXT NOT NULL DEFAULT 'waiting',
  updated_at INTEGER NOT NULL DEFAULT 0
-);`);
+);
+CREATE TABLE IF NOT EXISTS radio_songs(
+ channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+ played_at INTEGER NOT NULL,
+ duration INTEGER NOT NULL DEFAULT 0,
+ title TEXT NOT NULL,
+ artist TEXT NOT NULL DEFAULT '',
+ text TEXT NOT NULL DEFAULT '',
+ art TEXT NOT NULL DEFAULT '',
+ sh_id INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(channel_id, played_at)
+);
+CREATE INDEX IF NOT EXISTS radio_songs_channel_played ON radio_songs(channel_id, played_at DESC);`);
+
+for (const [name, type] of Object.entries({
+  station_api_url: "TEXT NOT NULL DEFAULT 'https://cp.streamchileno.cl/api/station/4'",
+  station_data: "TEXT NOT NULL DEFAULT '{}'",
+})) {
+  const existing = new Set((db.prepare('PRAGMA table_info(radio_channels)').all() as { name: string }[]).map(x => x.name));
+  if (!existing.has(name)) db.exec(`ALTER TABLE radio_channels ADD COLUMN ${name} ${type}`);
+}

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readdirSync, renameSync, rmSync, statfsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { db } from '../src/server/db.ts';
-import { channelPattern, radioDate, radioDays, radioRoot, recordingInfo } from '../src/server/radio.ts';
+import { channelPattern, radioDate, radioDays, radioRoot, recordingInfo, syncStationApi } from '../src/server/radio.ts';
 
 const interval = 5000;
 const minimumFree = 512 * 1024 ** 2;
@@ -12,11 +12,14 @@ const attempts = new Map();
 const retries = new Map();
 let stopping = false;
 let lastPurge = 0;
+let lastApiSync = 0;
 let timer;
 mkdirSync(pendingRoot, { recursive: true, mode: 0o700 });
 
-const active = db.prepare(`SELECT c.id,r.source_url FROM channels c JOIN radio_channels r ON r.channel_id=c.id
+const active = db.prepare(`SELECT c.id,r.source_url,r.station_api_url FROM channels c JOIN radio_channels r ON r.channel_id=c.id
   WHERE c.enabled=1 AND r.recording=1 AND r.source_url<>''`);
+const trackedStations = db.prepare(`SELECT c.id,r.station_api_url FROM channels c JOIN radio_channels r ON r.channel_id=c.id
+  WHERE c.enabled=1 AND (r.recording=1 OR r.published=1) AND r.station_api_url<>''`);
 const update = db.prepare(`UPDATE radio_channels SET state=?, updated_at=?
   WHERE channel_id=? AND source_url=? AND recording=1`);
 
@@ -123,11 +126,22 @@ function purge(now) {
   lastPurge = now;
 }
 
+function syncStations(now) {
+  if (now - lastApiSync < 25_000) return;
+  lastApiSync = now;
+  for (const row of trackedStations.all()) {
+    if (channelPattern.test(row.id) && row.station_api_url) {
+      void syncStationApi(row.id, row.station_api_url).catch(() => {});
+    }
+  }
+}
+
 function tick() {
   if (stopping) return;
   try {
     const now = Date.now();
     purge(now);
+    syncStations(now);
     const { bavail, bsize } = statfsSync(radioRoot);
     const hasSpace = bavail * bsize >= minimumFree;
     const desired = new Map(active.all().filter(channel => channelPattern.test(channel.id)).map(channel => [channel.id, channel]));

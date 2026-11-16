@@ -1,10 +1,14 @@
 ---
-import { radioSettings } from '../server/radio';
+import { defaultStationApiUrl, parseStationData, radioSettings, syncStationApi } from '../server/radio';
 import Icon from './Icon.astro';
 import type { Channel } from '../server/config';
 interface Props { channel: Channel }
 const { channel } = Astro.props;
-const settings = radioSettings(channel.id);
+let settings = radioSettings(channel.id);
+const apiUrl = settings?.station_api_url || defaultStationApiUrl;
+const station = await syncStationApi(channel.id, apiUrl);
+settings = radioSettings(channel.id);
+const stationInfo = Object.keys(station).length ? station : parseStationData(settings?.station_data);
 const canEdit = Astro.locals.user?.role === 'admin';
 const recent = settings && Date.now() - settings.updated_at < 10 * 60_000;
 const states: Record<string,string> = {
@@ -18,26 +22,100 @@ const state = !channel.enabled ? 'Canal desactivado' : !settings?.recording ? 'G
   (recent && states[settings.state]) || states[settings.state] || states.waiting;
 const saved = Astro.url.searchParams.get('saved') === '1';
 const error = Astro.url.searchParams.get('error');
+const effectiveStream = settings?.source_url || stationInfo.listen_url || '';
 ---
 <section class="card radio-settings">
-  <div class="card-heading"><h2>Grabación del canal</h2><span class:list={['badge', state === states.recording ? 'green' : 'gray']}>{state}</span></div>
+  <div class="card-heading">
+    <h2>Grabación y API de la estación</h2>
+    <span class:list={['badge', state === states.recording ? 'green' : 'gray']}>{state}</span>
+  </div>
   <div class="card-body radio-settings-body">
     {saved && <p role="status">Configuración guardada.</p>}
     {error && <p role="alert">{error}</p>}
-    <div class="radio-intro"><strong>Graba y publica el audio del canal</strong><p class="hint">La señal se guarda en archivos por hora para que la audiencia pueda volver a escucharla.</p></div>
+    <div class="radio-intro">
+      <strong>Conecta la API de la radio, graba por bloques y publica Radio a la carta</strong>
+      <p class="hint">Sincroniza los metadatos de la emisora (nombre, stream en vivo e historial musical) desde la API de la estación y guarda automáticamente el archivo de audio para escuchar emisiones pasadas.</p>
+    </div>
+
+    {stationInfo.name && (
+      <div class="station-api-preview" aria-label="Datos obtenidos de la API de la estación">
+        <div class="station-api-header">
+          <div>
+            <span class="badge green">API conectada</span>
+            <h3>{stationInfo.name}</h3>
+          </div>
+          {stationInfo.url && <a class="text-link" href={stationInfo.url} target="_blank" rel="noopener noreferrer">Sitio web <Icon name="external" size={15}/></a>}
+        </div>
+        <dl class="station-api-grid">
+          <div>
+            <dt>Stream en directo (API)</dt>
+            <dd class="mono">{stationInfo.listen_url || 'No informado'}</dd>
+          </div>
+          <div>
+            <dt>Sonando ahora</dt>
+            <dd>{stationInfo.now_playing ? `${stationInfo.now_playing.artist ? stationInfo.now_playing.artist + ' — ' : ''}${stationInfo.now_playing.title}` : 'Sin metadatos de canción'}</dd>
+          </div>
+          <div>
+            <dt>Formato / Bitrate</dt>
+            <dd>{stationInfo.format ? `${stationInfo.format.toUpperCase()}${stationInfo.bitrate ? ` · ${stationInfo.bitrate} kbps` : ''}` : 'Audio continuo'}</dd>
+          </div>
+          <div>
+            <dt>Oyentes actuales</dt>
+            <dd>{typeof stationInfo.listeners === 'number' ? `${stationInfo.listeners} conectados` : '—'}</dd>
+          </div>
+        </dl>
+      </div>
+    )}
+
     {canEdit && <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
       <div class="radio-config-fields">
-      <label for="radio-source">URL del audio en directo</label>
-      <input id="radio-source" name="source" type="url" maxlength="2048" autocomplete="off" spellcheck="false" value={settings?.source_url || ''} aria-describedby="radio-source-help"/>
-      <p id="radio-source-help" class="hint">Pega la URL HTTP o HTTPS del stream de audio de la radio.</p>
-      <label class="radio-check"><input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>Grabar continuamente</label>
-      <label class="radio-check"><input type="checkbox" name="published" checked={Boolean(settings?.published)}/>Publicar la página de Radio a la carta</label>
+        <label for="radio-station-api">URL de la API de la estación</label>
+        <input
+          id="radio-station-api"
+          name="stationApi"
+          type="url"
+          maxlength="2048"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder={defaultStationApiUrl}
+          value={apiUrl}
+          aria-describedby="radio-station-api-help"
+        />
+        <p id="radio-station-api-help" class="hint">
+          Ejemplo: <code>{defaultStationApiUrl}</code>. Obtiene datos de la emisora, el stream principal para volver al presente y el historial de canciones.
+        </p>
+
+        <label for="radio-source">URL del audio en directo (opcional si usas la API)</label>
+        <input
+          id="radio-source"
+          name="source"
+          type="url"
+          maxlength="2048"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder={stationInfo.listen_url || 'https://cp.streamchileno.cl/listen/radio_riquelme_1350_am/radio.mp3'}
+          value={effectiveStream}
+          aria-describedby="radio-source-help"
+        />
+        <p id="radio-source-help" class="hint">
+          Si lo dejas en blanco, se usará automáticamente el <code>listen_url</code> entregado por la API de la estación.
+        </p>
+
+        <label class="radio-check"><input type="checkbox" name="recording" checked={Boolean(settings?.recording)}/>Grabar continuamente</label>
+        <label class="radio-check"><input type="checkbox" name="published" checked={Boolean(settings?.published)}/>Publicar la página de Radio a la carta</label>
       </div>
       <div data-form-result role="status" aria-live="polite"></div>
-      <div class="radio-save-row"><button class="button primary" type="submit">Guardar configuración</button>{settings?.published === 1 && channel.enabled === 1 && <a class="text-link" href={`/radio/${channel.id}/`}>Vista previa de Radio a la carta <Icon name="arrow-right" size={16}/></a>}</div>
+      <div class="radio-save-row">
+        <button class="button primary" type="submit">Guardar y sincronizar estación</button>
+        {settings?.published === 1 && channel.enabled === 1 && <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta <Icon name="arrow-right" size={16}/></a>}
+      </div>
     </form>}
-    {!canEdit && <p class="hint">Un administrador puede configurar la fuente y la publicación de este canal.</p>}
-    <div class="radio-retention"><span class="badge gray">Opus · 82 kb/s</span><span>Disponibles hoy y los últimos cuatro días</span><span>Archivos por hora · Chile continental</span></div>
+    {!canEdit && <p class="hint">Un administrador puede configurar la API de la estación, la fuente de audio y la publicación de este canal.</p>}
+    <div class="radio-retention">
+      <span class="badge gray">Opus · 82 kb/s</span>
+      <span>Disponibles hoy y los últimos cuatro días</span>
+      <span>Sincronización con API e historial de canciones · Hora de Chile continental</span>
+    </div>
     {!canEdit && settings?.published === 1 && channel.enabled === 1 &&
       <a class="text-link" href={`/radio/${channel.id}/`}>Abrir Radio a la carta</a>}
   </div>
@@ -48,6 +126,13 @@ const error = Astro.url.searchParams.get('error');
 .radio-intro{padding:16px 18px;border-left:3px solid var(--accent);background:var(--surface-soft);border-radius:4px}
 .radio-intro>strong{font-size:16px;color:var(--text)}
 .radio-intro p{margin:5px 0 0}
+.station-api-preview{border:1px solid var(--border);border-radius:6px;padding:16px;background:var(--surface-soft);display:grid;gap:14px}
+.station-api-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.station-api-header h3{margin:6px 0 0;font-size:18px}
+.station-api-grid{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.station-api-grid>div{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:10px 12px}
+.station-api-grid dt{font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.station-api-grid dd{margin:0;font-size:14px;font-weight:600;color:var(--heading);overflow-wrap:anywhere}
 .radio-settings form{display:grid;gap:18px;margin:0}
 .radio-config-fields{display:grid;gap:10px;justify-items:start}
 .radio-settings form input[type="url"]{width:min(100%,720px);min-height:42px}

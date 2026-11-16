@@ -33,6 +33,9 @@ export const onRequest=defineMiddleware(async (context,next)=>{
   // Astro/SSR scripts are self-hosted; theme init receives an explicit hash.
   const { themeHash }=await import('./server/theme.ts');
   const media=new URL(process.env.MEDIA_ORIGIN||origin).origin;
-  response.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self' '${themeHash}'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' blob: ${media}; connect-src 'self' ${media}; worker-src 'self' blob:; frame-ancestors ${embeddable?'*':"'none'"}; base-uri 'self'; form-action 'self'; object-src 'none'`);
+  const radioPage=path.startsWith('/radio/');
+  const imgSrc=radioPage?"'self' data: blob: https:":"'self' data: blob:";
+  const mediaSrc=radioPage?`'self' blob: https: http: ${media}`:`'self' blob: ${media}`;
+  response.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self' '${themeHash}'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imgSrc}; media-src ${mediaSrc}; connect-src 'self' ${media}; worker-src 'self' blob:; frame-ancestors ${embeddable?'*':"'none'"}; base-uri 'self'; form-action 'self'; object-src 'none'`);
   return response;
 });

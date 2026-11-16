@@ -3,6 +3,7 @@ import Panel from '../../layouts/Panel.astro';
 import ChannelStorageFields from '../../components/ChannelStorageFields.astro';
 import {channelQuota,channelStorageUsage} from '../../server/channel-storage';
 import {storageQuota} from '../../server/config';
+import {defaultStationApiUrl,parseStationData,radioSettings} from '../../server/radio';
 import {mediaSize} from '../../lib/media';
 import Icon from '../../components/Icon.astro';
 import {db} from '../../server/db';
@@ -12,20 +13,44 @@ const users=db.prepare('SELECT id,username,role FROM users ORDER BY username').a
 const channels=Astro.locals.channels;
 ---
 <Panel title={section==='clientes'?'Clientes':'Canales de video'} section={section} admin><button slot="actions" class="button primary" type="button" data-open-dialog="create-record"><Icon name="plus" size={20}/>{section==='clientes'?'Crear cliente':'Crear canal'}</button>
-<section class="card"><div class="toolbar"><strong>{section==='clientes'?'Cuentas de la plataforma':'Canales registrados'}</strong><label class="search-field"><Icon name="search" size={18}/><input type="search" data-search placeholder={section==='clientes'?'Buscar usuario':'Buscar canal o propietario'} aria-label={section==='clientes'?'Buscar usuario':'Buscar canal o propietario'}/></label></div><div class="table-wrap admin-table"><table data-filter-table><thead><tr>{section==='clientes'?<><th>Usuario</th><th>Rol</th><th>Canales asignados</th></>:<><th>Canal</th><th>Propietario</th><th>Estado de salida</th><th>Respaldo</th><th>Modalidad y cuota</th><th>Administrar</th></>}</tr></thead><tbody>{section==='clientes'?users.map(u=><tr><td><strong>{u.username}</strong></td><td><span class="badge gray">{u.role==='admin'?'Superadministrador':'Cliente'}</span></td><td>{channels.filter(c=>c.owner_id===u.id).length}</td></tr>):channels.map(c=><tr><td><strong>{c.name}</strong></td><td>{users.find(u=>u.id===c.owner_id)?.username}</td><td><span class="badge gray">Sin datos</span></td><td>{JSON.parse(c.fallback).length?`${JSON.parse(c.fallback).length} videos`:'Cartela'}</td><td>{channelQuota(c)?<span>{mediaSize(channelStorageUsage(c).bytes)} de {mediaSize(channelQuota(c))}</span>:<span class="badge gray">Solo streaming</span>}</td><td><div class="button-row"><button class="button small" type="button" data-open-dialog={`storage-${c.id}`}>Editar cuota</button><a class="text-link" href={`/cliente/?channel=${c.id}`}>Operar canal <Icon name="arrow" size={16}/></a></div></td></tr>)}</tbody></table><p class="empty-search" hidden>No se encontraron registros.</p>{section==='servicios'&&!channels.length&&<p class="card-body muted">No hay canales registrados.</p>}</div></section>
+<section class="card"><div class="toolbar"><strong>{section==='clientes'?'Cuentas de la plataforma':'Canales registrados'}</strong><label class="search-field"><Icon name="search" size={18}/><input type="search" data-search placeholder={section==='clientes'?'Buscar usuario':'Buscar canal o propietario'} aria-label={section==='clientes'?'Buscar usuario':'Buscar canal o propietario'}/></label></div><div class="table-wrap admin-table"><table data-filter-table><thead><tr>{section==='clientes'?<><th>Usuario</th><th>Rol</th><th>Canales asignados</th></>:<><th>Canal</th><th>Propietario</th><th>Estado de salida</th><th>Respaldo</th><th>Modalidad y cuota</th><th>Administrar</th></>}</tr></thead><tbody>{section==='clientes'?users.map(u=><tr><td><strong>{u.username}</strong></td><td><span class="badge gray">{u.role==='admin'?'Superadministrador':'Cliente'}</span></td><td>{channels.filter(c=>c.owner_id===u.id).length}</td></tr>):channels.map(c=><tr><td><strong>{c.name}</strong></td><td>{users.find(u=>u.id===c.owner_id)?.username}</td><td><span class="badge gray">Sin datos</span></td><td>{JSON.parse(c.fallback).length?`${JSON.parse(c.fallback).length} videos`:'Cartela'}</td><td>{channelQuota(c)?<span>{mediaSize(channelStorageUsage(c).bytes)} de {mediaSize(channelQuota(c))}</span>:<span class="badge gray">Solo streaming</span>}</td><td><div class="button-row"><button class="button small" type="button" data-open-dialog={`storage-${c.id}`}>Editar cuota</button><button class="button small" type="button" data-open-dialog={`radio-${c.id}`}>Radio / API</button><a class="text-link" href={`/cliente/?channel=${c.id}`}>Operar canal <Icon name="arrow" size={16}/></a></div></td></tr>)}</tbody></table><p class="empty-search" hidden>No se encontraron registros.</p>{section==='servicios'&&!channels.length&&<p class="card-body muted">No hay canales registrados.</p>}</div></section>
 <dialog class="dialog" id="create-record"><div class="card-heading"><h2>{section==='clientes'?'Crear cliente':'Crear canal de video'}</h2><button class="icon-button bare" type="button" data-close-dialog aria-label="Cerrar"><Icon name="close"/></button></div>
 {section==='clientes'?<form data-api-form="/api/admin/users" data-reload><div class="card-body form-fields"><label>Usuario<input name="username" required minlength="3" maxlength="64" autocomplete="off"/></label><label>Contraseña inicial<input name="password" type="password" required minlength="15" maxlength="128" autocomplete="new-password"/></label><p class="hint">Usa una frase única de 15 a 128 caracteres. El cliente puede cambiarla desde su cuenta.</p><div data-form-result role="status" aria-live="polite"></div></div><div class="form-footer"><button class="button" type="button" data-close-dialog>Cancelar</button><button class="button primary" type="submit">Crear cliente</button></div></form>:<form data-api-form="/api/admin/channels"><div class="card-body form-fields"><label>Nombre del canal<input name="name" maxlength="80" required/></label><label>Propietario<select name="owner" required><option value="">Seleccionar cuenta…</option>{users.map(u=><option value={u.id}>{u.username}{u.role==='admin'?' · Superadministrador':''}</option>)}</select></label><ChannelStorageFields quota={storageQuota}/><p class="hint">Se guardará el canal y se enviará su configuración al motor. La clave se muestra una sola vez. Comprueba la salida desde el panel de emisión.</p><div data-form-result role="status" aria-live="polite"></div></div><div class="form-footer"><button class="button" type="button" data-close-dialog>Cerrar</button><button class="button primary" type="submit">Crear canal</button><a class="button outline" href="/admin/servicios/">Actualizar lista</a></div></form>}
 </dialog>
-{section==='servicios'&&channels.map(channel=><dialog class="dialog" id={`storage-${channel.id}`}>
- <div class="card-heading"><h2>Cuota de {channel.name}</h2><button class="icon-button bare" type="button" data-close-dialog aria-label="Cerrar"><Icon name="close"/></button></div>
- <form data-api-form="/api/admin/channels" data-reload>
-  <input type="hidden" name="action" value="storage"/><input type="hidden" name="channel" value={channel.id}/>
-  <div class="card-body form-fields">
-   <p class="hint">Almacenamiento utilizado: {mediaSize(channelStorageUsage(channel).bytes)}. Si reduces la cuota, se conservan los archivos y se bloquean las subidas que superen el límite.</p>
-   <ChannelStorageFields quota={channelQuota(channel)}/>
-   <div data-form-result role="status"></div>
-  </div>
-  <div class="form-footer"><button type="button" class="button" data-close-dialog>Cancelar</button><button type="submit" class="button primary">Guardar modalidad y cuota</button></div>
- </form>
-</dialog>)}
+{section==='servicios'&&channels.map(channel=>{
+ const rSettings=radioSettings(channel.id);
+ const rStation=parseStationData(rSettings?.station_data);
+ return <>
+ <dialog class="dialog" id={`storage-${channel.id}`}>
+  <div class="card-heading"><h2>Cuota de {channel.name}</h2><button class="icon-button bare" type="button" data-close-dialog aria-label="Cerrar"><Icon name="close"/></button></div>
+  <form data-api-form="/api/admin/channels" data-reload>
+   <input type="hidden" name="action" value="storage"/><input type="hidden" name="channel" value={channel.id}/>
+   <div class="card-body form-fields">
+    <p class="hint">Almacenamiento utilizado: {mediaSize(channelStorageUsage(channel).bytes)}. Si reduces la cuota, se conservan los archivos y se bloquean las subidas que superen el límite.</p>
+    <ChannelStorageFields quota={channelQuota(channel)}/>
+    <div data-form-result role="status"></div>
+   </div>
+   <div class="form-footer"><button type="button" class="button" data-close-dialog>Cancelar</button><button type="submit" class="button primary">Guardar modalidad y cuota</button></div>
+  </form>
+ </dialog>
+ <dialog class="dialog" id={`radio-${channel.id}`}>
+  <div class="card-heading"><h2>Radio a la carta · {rStation.name || channel.name}</h2><button class="icon-button bare" type="button" data-close-dialog aria-label="Cerrar"><Icon name="close"/></button></div>
+  <form data-api-form={`/api/admin/radio/${channel.id}`} data-reload>
+   <div class="card-body form-fields">
+    <label>URL de la API de la estación
+     <input name="stationApi" type="url" maxlength="2048" value={rSettings?.station_api_url || defaultStationApiUrl} placeholder={defaultStationApiUrl}/>
+    </label>
+    <p class="hint">Extrae nombre, stream en vivo e historial musical desde <code>{defaultStationApiUrl}</code>.</p>
+    <label>URL del stream en directo (opcional si usas la API)
+     <input name="source" type="url" maxlength="2048" value={rSettings?.source_url || rStation.listen_url || ''} placeholder="https://cp.streamchileno.cl/listen/radio_riquelme_1350_am/radio.mp3"/>
+    </label>
+    <label class="check-label"><input type="checkbox" name="recording" checked={Boolean(rSettings?.recording)}/>Grabar continuamente en archivos por hora</label>
+    <label class="check-label"><input type="checkbox" name="published" checked={Boolean(rSettings?.published)}/>Publicar página de Radio a la carta</label>
+    <div data-form-result role="status"></div>
+   </div>
+   <div class="form-footer"><button type="button" class="button" data-close-dialog>Cancelar</button><button type="submit" class="button primary">Guardar y sincronizar</button></div>
+  </form>
+ </dialog>
+ </>;
+})}
 </Panel>
