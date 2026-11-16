@@ -94,7 +94,7 @@ export function radioSettings(id: string) {
 
 export function publicRadio(id: string | undefined) {
   if (!id || !channelPattern.test(id)) return;
-  return db.prepare(`SELECT c.id,c.name,r.source_url,r.station_api_url,r.station_data FROM channels c JOIN radio_channels r ON r.channel_id=c.id
+  const row = db.prepare(`SELECT c.id,c.name,r.source_url,r.station_api_url,r.station_data FROM channels c JOIN radio_channels r ON r.channel_id=c.id
     WHERE c.id=? AND c.enabled=1 AND r.published=1`).get(id) as {
     id: string;
     name: string;
@@ -102,6 +102,16 @@ export function publicRadio(id: string | undefined) {
     station_api_url: string;
     station_data: string;
   } | undefined;
+  if (!row) return;
+  if (row.station_api_url === defaultStationApiUrl && !row.name.toLowerCase().includes('riquelme')) {
+    try {
+      db.prepare("UPDATE radio_channels SET station_api_url='', station_data='{}' WHERE channel_id=?").run(row.id);
+      db.prepare('DELETE FROM radio_songs WHERE channel_id=?').run(row.id);
+    } catch {}
+    row.station_api_url = '';
+    row.station_data = '{}';
+  }
+  return row;
 }
 
 export function radioDate(timestamp: number) {
@@ -409,6 +419,11 @@ export function matchSongRecording(playedAtSeconds: number, durationSeconds: num
 
 export function songsForDate(channelId: string, date: string, recordings: Recording[] = [], currentPlayedAt?: number): RadioSong[] {
   if (!channelPattern.test(channelId)) return [];
+  const settings = radioSettings(channelId);
+  if (!settings?.station_api_url?.trim()) {
+    try { db.prepare('DELETE FROM radio_songs WHERE channel_id=?').run(channelId); } catch {}
+    return [];
+  }
   const rows = db.prepare(`SELECT played_at,duration,title,artist,text,art,sh_id
     FROM radio_songs WHERE channel_id=? ORDER BY played_at DESC LIMIT 400`).all(channelId) as Omit<RadioSong, 'recording' | 'is_current'>[];
 

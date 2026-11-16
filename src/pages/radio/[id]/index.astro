@@ -275,7 +275,7 @@ const nowPlayingArt = station.now_playing?.art || '';
           </div>
         </section>
 
-        <section class="card songs-panel" id="canciones" hidden={!channel.station_api_url && !songs.length}>
+        <section class="card songs-panel" id="canciones" hidden={!songs.length}>
           <div class="card-heading">
             <h2>Horario de canciones</h2>
             <span class="hint">Sincronizado con la estación y grabaciones</span>
@@ -353,7 +353,7 @@ const nowPlayingArt = station.now_playing?.art || '';
           </div>
         </section>
 
-        <section class="card songs-panel" id="horario-grabaciones" hidden={Boolean(channel.station_api_url || songs.length)}>
+        <section class="card songs-panel" id="horario-grabaciones" hidden={Boolean(songs.length)}>
           <div class="card-heading">
             <h2>Horario de grabaciones</h2>
             <span class="hint">{dateLabel(date)} · Hora de Chile continental</span>
