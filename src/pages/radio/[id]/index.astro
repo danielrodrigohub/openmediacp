@@ -87,7 +87,21 @@ const radioPath = `/radio/${channel.id}/`;
     audio!.controls = false;
     document.querySelector<HTMLElement>('.live-card')!.hidden = true;
     toggle.onclick = () => { if (!current.getAttribute('src')) current = live!; if (current.paused) void current.play().catch(() => { status.textContent='No se pudo reproducir. Vuelve a intentarlo.'; }); else current.pause(); };
-    document.querySelector<HTMLButtonElement>('#go-live')!.onclick = () => { audio?.pause(); current = live!; live!.load(); void live!.play().catch(() => { status.textContent='No se pudo conectar con la radio'; }); };
+    function goLive() {
+      if (!live) return;
+      audio?.pause();
+      current = live;
+      progress.disabled = true;
+      progress.value = '0';
+      status.textContent = 'Conectando con la radio…';
+      if (selection) selection.textContent = 'Señal en directo';
+      choices.forEach(choice => choice.setAttribute('aria-pressed', 'false'));
+      document.querySelectorAll('[data-chip]').forEach(chip => chip.setAttribute('aria-pressed', 'false'));
+      if (liveReturn) liveReturn.hidden = true;
+      live.load();
+      void live.play().catch(() => { status.textContent = 'Pulsa reproducir para escuchar el directo'; });
+    }
+    document.querySelector<HTMLButtonElement>('#go-live')!.onclick = goLive;
     document.querySelector<HTMLButtonElement>('#skip-back')!.onclick = () => { if(current===audio) current.currentTime=Math.max(0,current.currentTime-15); };
     document.querySelector<HTMLButtonElement>('#skip-forward')!.onclick = () => { if(current===audio && Number.isFinite(current.duration)) current.currentTime=Math.min(current.duration,current.currentTime+15); };
     progress.oninput=()=>{if(current===audio && Number.isFinite(current.duration))current.currentTime=Number(progress.value)*current.duration/100;};
@@ -167,13 +181,9 @@ const radioPath = `/radio/${channel.id}/`;
     window.addEventListener('popstate', () => { void changeDate(new URL(location.href).searchParams.get('fecha') || dateInput?.max || '', false); });
     live?.addEventListener('play', () => { audio?.pause(); });
     audio?.addEventListener('play', () => { live?.pause(); if (liveReturn) liveReturn.hidden = false; });
-    liveReturn?.addEventListener('click', () => {
-      audio?.pause();
-      if (live) { live.load(); void live.play().catch(() => {}); }
-      liveReturn.hidden = true;
-    });
+    liveReturn?.addEventListener('click', goLive);
     audio?.addEventListener('error', () => { if (error) error.hidden = false; });
-    audio?.addEventListener('ended', () => { if (active + 1 < choices.length) play(active + 1); });
+    audio?.addEventListener('ended', goLive);
   </script>
 </body>
 </html>
