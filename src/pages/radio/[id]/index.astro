@@ -37,7 +37,7 @@ const dateFormat = new Intl.DateTimeFormat('es-CL', {
 const calendarDay = (day: string) => new Date(day + 'T12:00:00Z');
 const dateLabel = (day: string) => capitalizeFirst(dateFormat.format(calendarDay(day)));
 const shortDate = new Intl.DateTimeFormat('es-CL', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
-const shortLabel = (day: string) => capitalizeFirst(shortDate.format(calendarDay(day)).replace(/\./g, ''));
+const shortLabel = (day: string) => shortDate.format(calendarDay(day)).replace(/\./g, '');
 const timeRange = (start: number, end: number) => `${radioHour(start)} – ${radioHour(end)}`;
 const formatSongDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '—';
@@ -114,11 +114,11 @@ const nowPlayingArt = station.now_playing?.art || '';
 
           <div class="recording-day-heading">
             <h3>{dateLabel(date)}</h3>
-            <span>{selections.length} {selections.length === 1 ? 'corte disponible' : 'cortes disponibles'}</span>
+            <span id="cuts-count-label">{selections.length} {selections.length === 1 ? 'corte disponible' : 'cortes disponibles'}</span>
           </div>
 
           {selections.length ? (
-            <ul class="radio-hours">
+            <ul class="radio-hours" id="sidebar-recordings-list">
               {selections.map(item => (
                 <li>
                   <button
@@ -166,7 +166,7 @@ const nowPlayingArt = station.now_playing?.art || '';
           <div class="player-main">
             <div class="player-top">
               <span class="mode-badge" id="play-state">En directo</span>
-              <button id="go-live" type="button" class="go-live-btn">
+              <button id="go-live" type="button" class="go-live-btn" hidden>
                 <Icon name="broadcast" size={17}/>
                 <span>Volver al directo</span>
               </button>
@@ -182,10 +182,10 @@ const nowPlayingArt = station.now_playing?.art || '';
 
             <div class="custom-controls">
               <button id="skip-back" type="button" class="skip-btn" aria-label="Retroceder 15 segundos" title="Retroceder 15 segundos">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
-                  <path d="M3 3v5h5"/>
-                  <text x="12" y="15.5" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">15</text>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/>
+                  <path d="M3.5 4v4.5H8"/>
+                  <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
                 </svg>
               </button>
 
@@ -204,10 +204,10 @@ const nowPlayingArt = station.now_playing?.art || '';
               </button>
 
               <button id="skip-forward" type="button" class="skip-btn" aria-label="Avanzar 15 segundos" title="Avanzar 15 segundos">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M21 12a9 9 0 1 1-3-6.7L21 8"/>
-                  <path d="M21 3v5h-5"/>
-                  <text x="12" y="15.5" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">15</text>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20.5 12a8.5 8.5 0 1 1-2.5-6l2.5 2.5"/>
+                  <path d="M20.5 4v4.5H16"/>
+                  <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
                 </svg>
               </button>
 
@@ -247,7 +247,7 @@ const nowPlayingArt = station.now_playing?.art || '';
             <h2>Grabaciones del día</h2>
             <span class="hint">Archivos por hora</span>
           </div>
-          <div class="recording-chips">
+          <div class="recording-chips" id="recording-chips-list">
             {selections.map(item => (
               <button
                 class="button"
@@ -271,6 +271,13 @@ const nowPlayingArt = station.now_playing?.art || '';
           </div>
           <div class="card-body songs-table-wrap">
             <table id="songs-table">
+              <colgroup>
+                <col class="col-time"/>
+                <col class="col-title"/>
+                <col class="col-artist"/>
+                <col class="col-duration"/>
+                <col class="col-action"/>
+              </colgroup>
               <thead>
                 <tr>
                   <th>Hora</th>
@@ -292,15 +299,15 @@ const nowPlayingArt = station.now_playing?.art || '';
                       <strong>{radioHour(song.played_at * 1000)}</strong>
                       {song.is_current && <span class="song-live-pill">Ahora</span>}
                     </td>
-                    <td>
+                    <td class="song-title-td">
                       <div class="song-title-cell">
                         {song.art && <img src={song.art} alt="" class="song-thumb" loading="lazy"/>}
-                        <strong>{song.title}</strong>
+                        <strong title={song.title}>{song.title}</strong>
                       </div>
                     </td>
-                    <td>{song.artist || stationName}</td>
+                    <td class="song-artist-td" title={song.artist || stationName}>{song.artist || stationName}</td>
                     <td class="song-duration-cell">{formatSongDuration(song.duration)}</td>
-                    <td>
+                    <td class="song-action-td">
                       {song.recording ? (
                         <button
                           type="button"
@@ -310,12 +317,12 @@ const nowPlayingArt = station.now_playing?.art || '';
                           data-seek-title={`${song.artist ? song.artist + ' — ' : ''}${song.title}`}
                           data-seek-art={song.art}
                         >
-                          <Icon name="play" size={14}/>
+                          <Icon name="play" size={13}/>
                           <span>{timeRange(song.recording.start, song.recording.end)}</span>
                         </button>
                       ) : song.is_current ? (
                         <button type="button" class="button small song-seek-btn" data-trigger-live="true">
-                          <Icon name="broadcast" size={14}/>
+                          <Icon name="broadcast" size={13}/>
                           <span>En directo</span>
                         </button>
                       ) : (
@@ -354,6 +361,7 @@ const nowPlayingArt = station.now_playing?.art || '';
   <script>
     const bodyEl = document.body;
     const radioPath = bodyEl.dataset.radioPath || location.pathname;
+    const stationFallbackName = bodyEl.dataset.stationName || '';
     let liveStreamUrl = bodyEl.dataset.liveUrl || '';
     const live = document.querySelector<HTMLAudioElement>('#radio-live')!;
     const audio = document.querySelector<HTMLAudioElement>('#radio-audio')!;
@@ -424,13 +432,8 @@ const nowPlayingArt = station.now_playing?.art || '';
     });
 
     function setPlayIcon(playing: boolean) {
-      iconPlay.setAttribute('hidden', '');
-      iconPause.setAttribute('hidden', '');
-      if (playing) {
-        iconPause.removeAttribute('hidden');
-      } else {
-        iconPlay.removeAttribute('hidden');
-      }
+      iconPlay.hidden = playing;
+      iconPause.hidden = !playing;
       toggle.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
     }
 
@@ -451,6 +454,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       audio.pause();
       error.hidden = true;
       statusBadge.textContent = 'En directo';
+      goLiveBtn.hidden = true;
       selection.textContent = liveTrackTitle;
       setArtwork(liveTrackArt);
       progress.disabled = false;
@@ -512,6 +516,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       live.pause();
       error.hidden = true;
       statusBadge.textContent = 'Grabación disponible';
+      goLiveBtn.hidden = false;
 
       const dateText = button.dataset.radioDate || '';
       const rangeText = button.dataset.radioTime || '';
@@ -534,7 +539,6 @@ const nowPlayingArt = station.now_playing?.art || '';
           if (audio.error) error.hidden = false;
         });
       } else {
-        // Use W3C Media Fragment #t= so browser seeks at demuxer level immediately, plus loadedmetadata/canplay fallback
         const fragment = targetOffset > 0 ? `#t=${Math.floor(targetOffset)}` : '';
         audio.src = baseAudioUrl + fragment;
         audio.load();
@@ -585,7 +589,6 @@ const nowPlayingArt = station.now_playing?.art || '';
 
     goLiveBtn.addEventListener('click', () => switchToPresent(true));
 
-    // Rewind 15 seconds (-15s)
     skipBackBtn.addEventListener('click', () => {
       if (mode === 'archive') {
         const currentPos = pendingSeek !== null ? pendingSeek : audio.currentTime;
@@ -593,7 +596,6 @@ const nowPlayingArt = station.now_playing?.art || '';
           applySeekToAudio(currentPos - 15);
           if (audio.paused) void audio.play().catch(() => {});
         } else if (activeIndex > 0) {
-          // Step seamlessly into the end of the previous recording block
           const prevIndex = activeIndex - 1;
           const prevDur = getKnownDuration(prevIndex);
           const remainder = Math.max(0, 15 - currentPos);
@@ -603,11 +605,11 @@ const nowPlayingArt = station.now_playing?.art || '';
           if (audio.paused) void audio.play().catch(() => {});
         }
       } else {
-        // In Live mode: if the live element itself has >= 15s buffered, rewind inside live; otherwise jump to 15s before end of latest recording
         if (!live.paused && live.currentTime >= 15) {
           try {
             live.currentTime = Math.max(0, live.currentTime - 15);
             statusBadge.textContent = 'En directo (-15s)';
+            goLiveBtn.hidden = false;
             const ratio = Math.max(10, Math.min(90, (live.currentTime / Math.max(30, live.currentTime + 15)) * 50));
             progress.value = String(ratio);
             return;
@@ -621,7 +623,6 @@ const nowPlayingArt = station.now_playing?.art || '';
       }
     });
 
-    // Forward 15 seconds (+15s)
     skipForwardBtn.addEventListener('click', () => {
       if (mode === 'archive') {
         const dur = getKnownDuration();
@@ -640,13 +641,13 @@ const nowPlayingArt = station.now_playing?.art || '';
           live.currentTime = Math.min(bufferedEnd - 0.5, live.currentTime + 15);
           if (bufferedEnd - live.currentTime <= 2) {
             statusBadge.textContent = 'En directo';
+            goLiveBtn.hidden = true;
             progress.value = '50';
           }
         }
       }
     });
 
-    // Interactive timeline slider in the middle
     progress.addEventListener('input', () => {
       isScrubbing = true;
       const val = Number(progress.value);
@@ -657,7 +658,6 @@ const nowPlayingArt = station.now_playing?.art || '';
           playTime.textContent = `${clock(previewSec)} / ${clock(dur)}`;
         }
       } else {
-        // In live mode, dragging left from the middle (50) previews rewinding into the latest cut
         if (val < 50 && choices.length > 0) {
           const latestIndex = choices.length - 1;
           const latestDur = getKnownDuration(latestIndex);
@@ -912,6 +912,40 @@ const nowPlayingArt = station.now_playing?.art || '';
       void changeDate(new URL(location.href).searchParams.get('fecha') || dateInput?.max || '', false);
     });
 
+    function escapeHtml(str: string) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderSongsTable(songs: any[]) {
+      const tbody = document.querySelector<HTMLElement>('#songs-tbody');
+      if (!tbody) return;
+      const searchVal = (document.querySelector<HTMLInputElement>('#recording-search')?.value || '').trim().toLowerCase();
+      if (!Array.isArray(songs) || !songs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="songs-empty-cell">La radio aún no dispone de un registro de canciones emitidas.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = songs.map(song => {
+        const artist = song.artist || stationFallbackName;
+        const durLabel = song.duration > 0 ? clock(song.duration) : '—';
+        const seekTitle = `${song.artist ? song.artist + ' — ' : ''}${song.title}`;
+        let actionHtml = '<span class="no-archive-tag">Sin corte</span>';
+        if (song.recording) {
+          actionHtml = `<button type="button" class="button small song-seek-btn" data-seek-audio="${escapeHtml(song.recording.url)}" data-seek-offset="${Number(song.recording.offset) || 0}" data-seek-title="${escapeHtml(seekTitle)}" data-seek-art="${escapeHtml(song.art || '')}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><span>${escapeHtml(song.recording.range)}</span></button>`;
+        } else if (song.isCurrent) {
+          actionHtml = `<button type="button" class="button small song-seek-btn" data-trigger-live="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a6 6 0 0 0 0 8 M16 8a6 6 0 0 1 0 8 M4 4a12 12 0 0 0 0 16 M20 4a12 12 0 0 1 0 16 M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg><span>En directo</span></button>`;
+        }
+        const rowText = `${song.time} ${song.title} ${artist}`.toLowerCase();
+        const hiddenAttr = searchVal && !rowText.includes(searchVal) ? ' hidden' : '';
+        return `<tr data-song-row data-has-recording="${song.recording ? 'true' : 'false'}" data-recording-name="${escapeHtml(song.recording?.name || '')}" data-played-at="${Number(song.playedAt) || 0}"${hiddenAttr}>
+          <td class="song-time-cell"><strong>${escapeHtml(song.time)}</strong>${song.isCurrent ? '<span class="song-live-pill">Ahora</span>' : ''}</td>
+          <td class="song-title-td"><div class="song-title-cell">${song.art ? `<img src="${escapeHtml(song.art)}" alt="" class="song-thumb" loading="lazy"/>` : ''}<strong title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</strong></div></td>
+          <td class="song-artist-td" title="${escapeHtml(artist)}">${escapeHtml(artist)}</td>
+          <td class="song-duration-cell">${durLabel}</td>
+          <td class="song-action-td">${actionHtml}</td>
+        </tr>`;
+      }).join('');
+    }
+
     async function refreshStationStatus() {
       try {
         const currentFecha = document.querySelector<HTMLInputElement>('#radio-date')?.value || '';
@@ -935,6 +969,24 @@ const nowPlayingArt = station.now_playing?.art || '';
             }
           }
         }
+        if (Array.isArray(data.recordings) && data.recordings.length > 0 && choices.length > 0) {
+          const latestData = data.recordings[data.recordings.length - 1];
+          const latestChoice = choices[choices.length - 1];
+          if (latestChoice && Number(latestChoice.dataset.radioStart) === latestData.start) {
+            latestChoice.dataset.radioAudio = latestData.url;
+            latestChoice.dataset.radioName = latestData.name;
+            latestChoice.dataset.radioEnd = String(latestData.end);
+            latestChoice.dataset.radioTime = latestData.range;
+            const smallEl = latestChoice.querySelector('small');
+            if (smallEl) smallEl.textContent = `${latestData.range} hrs.`;
+            if (mode === 'archive' && activeIndex === choices.length - 1) {
+              activeEndMs = latestData.end;
+            }
+          }
+        }
+        if (Array.isArray(data.songs)) {
+          renderSongsTable(data.songs);
+        }
       } catch {}
     }
 
@@ -952,7 +1004,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       switchToPresent(false);
     }
 
-    setInterval(refreshStationStatus, 20_000);
+    setInterval(refreshStationStatus, 15_000);
   </script>
 </body>
 </html>
@@ -1020,7 +1072,7 @@ const nowPlayingArt = station.now_playing?.art || '';
 }
 .radio-layout {
   display: grid;
-  grid-template-columns: minmax(260px, .85fr) minmax(0, 1.7fr);
+  grid-template-columns: minmax(280px, .82fr) minmax(0, 1.75fr);
   gap: 18px;
   align-items: start;
 }
@@ -1070,17 +1122,20 @@ const nowPlayingArt = station.now_playing?.art || '';
   font: inherit;
 }
 
+/* Single-line Day Buttons */
 .radio-days {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
 .day-button {
-  min-width: 72px;
-  min-height: 48px;
-  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 .recording-day-heading {
   display: flex;
@@ -1186,6 +1241,7 @@ const nowPlayingArt = station.now_playing?.art || '';
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  min-height: 32px;
   margin-bottom: 8px;
 }
 .mode-badge {
@@ -1220,6 +1276,9 @@ const nowPlayingArt = station.now_playing?.art || '';
   margin: 0 0 16px;
   font-size: 15px;
   color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Single-Row Sober Controls with Centered Interactive Scrubber */
@@ -1235,8 +1294,8 @@ const nowPlayingArt = station.now_playing?.art || '';
   border: 0;
   background: transparent;
   color: #fff;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   border-radius: 4px;
   display: grid;
@@ -1324,30 +1383,44 @@ const nowPlayingArt = station.now_playing?.art || '';
   border-color: #075cd6;
 }
 
+/* Fixed-Layout Songs Table (No Horizontal Clipping) */
 .songs-table-wrap {
   padding: 0;
-  overflow-x: auto;
+  max-height: 440px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-.songs-panel table {
+.songs-panel :global(table) {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
-.songs-panel th {
+.songs-panel .col-time { width: 92px; }
+.songs-panel .col-title { width: auto; }
+.songs-panel .col-artist { width: 24%; }
+.songs-panel .col-duration { width: 76px; }
+.songs-panel .col-action { width: 138px; }
+
+.songs-panel :global(th) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: #eaf0f7;
   text-align: left;
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: 13px;
 }
-.songs-panel td {
-  padding: 12px 14px;
+.songs-panel :global(td) {
+  padding: 10px 14px;
   color: #202c3d;
   font-size: 14px;
   border-bottom: 1px solid #e6edf5;
+  vertical-align: middle;
 }
-.song-time-cell {
+.songs-panel :global(.song-time-cell) {
   white-space: nowrap;
 }
-.song-live-pill {
+.songs-panel :global(.song-live-pill) {
   display: inline-block;
   margin-left: 6px;
   padding: 2px 6px;
@@ -1357,31 +1430,58 @@ const nowPlayingArt = station.now_playing?.art || '';
   background: #e8effc;
   color: #075cd6;
 }
-.song-title-cell {
+.songs-panel :global(.song-title-td) {
+  min-width: 0;
+}
+.songs-panel :global(.song-title-cell) {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
-.song-thumb {
+.songs-panel :global(.song-title-cell strong) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  min-width: 0;
+}
+.songs-panel :global(.song-artist-td) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #4a5b73;
+}
+.songs-panel :global(.song-thumb) {
   width: 32px;
   height: 32px;
   border-radius: 4px;
   object-fit: cover;
   flex-shrink: 0;
 }
-.song-duration-cell {
+.songs-panel :global(.song-duration-cell) {
   font-variant-numeric: tabular-nums;
   color: #596a83;
+  white-space: nowrap;
 }
-.no-archive-tag {
+.songs-panel :global(.song-action-td) {
+  white-space: nowrap;
+}
+.songs-panel :global(.song-seek-btn) {
+  font-size: 12px;
+  padding: 4px 8px;
+  min-height: 30px;
+}
+.songs-panel :global(.no-archive-tag) {
   font-size: 13px;
   color: #596a83;
 }
-.songs-empty-cell {
+.songs-panel :global(.songs-empty-cell) {
   padding: 24px 14px !important;
   color: #596a83;
 }
 
+/* Footer with high-contrast Brand wordmark */
 .radio-footer {
   background: #102a50;
   color: #fff;
@@ -1391,8 +1491,15 @@ const nowPlayingArt = station.now_playing?.art || '';
   padding: 20px 3%;
   margin-top: 24px;
 }
-.radio-footer .brand {
+.radio-footer :global(.brand),
+.radio-footer :global(.brand-name) {
   color: #fff;
+}
+.radio-footer :global(.brand-signature strong) {
+  color: #70adff;
+}
+.radio-footer :global(.brand-signature > span) {
+  color: #c8d2e3;
 }
 .radio-footer > span:last-child {
   margin-left: auto;
@@ -1433,7 +1540,7 @@ const nowPlayingArt = station.now_playing?.art || '';
     height: 112px;
   }
   .radio-layout {
-    grid-template-columns: minmax(250px, .85fr) minmax(0, 1.7fr);
+    grid-template-columns: minmax(260px, .85fr) minmax(0, 1.7fr);
   }
 }
 
@@ -1488,6 +1595,14 @@ const nowPlayingArt = station.now_playing?.art || '';
     order: 2;
   }
   .volume-control {
+    display: none;
+  }
+  .songs-panel .col-artist,
+  .songs-panel :global(.song-artist-td),
+  .songs-panel :global(th:nth-child(3)),
+  .songs-panel .col-duration,
+  .songs-panel :global(.song-duration-cell),
+  .songs-panel :global(th:nth-child(4)) {
     display: none;
   }
   .radio-page {

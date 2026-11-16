@@ -216,6 +216,24 @@ function cleanString(value: unknown, max = 300): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+function cleanArtist(value: unknown): string {
+  const raw = cleanString(value, 200);
+  if (/^(?:unknown\s*artist|desconocido|sin\s*artista)$/i.test(raw)) return '';
+  return raw;
+}
+
+export function isSystemOrAdTrack(title: string, artist: string): boolean {
+  const t = title.trim();
+  const a = artist.trim();
+  if (!t) return true;
+  if (/(?:^|[_-])(?:pub|publicidad|comercial|jingle|spot|promo)(?:[_-]|$)/i.test(t)) return true;
+  if (/^(?:a\d{3,5}_|rrc[-_]|hth\d+|conexion|desconexion|temperaturaregional|temperatura|hora|1350\s*am|radio\s*riquelme)$/i.test(t)) return true;
+  if (/^(?:rrc|radio\s*riquelme)$/i.test(a) && (t.includes('_') || /1350/i.test(t))) return true;
+  if ((!a || /^unknown\s*artist$/i.test(a)) && (!t.includes(' ') || t.includes('_'))) return true;
+  if (t.length > 45 && !t.includes(' ')) return true;
+  return false;
+}
+
 function cleanUrl(value: unknown): string {
   const raw = cleanString(value, 2048);
   return validateHttpUrl(raw) ? raw : '';
@@ -290,9 +308,10 @@ export async function fetchStationApiData(stationApiUrl: string): Promise<{ info
     const playedAt = Number(entry.played_at);
     if (!Number.isFinite(playedAt) || playedAt <= 0) return;
     const title = cleanString(song.title, 200) || cleanString(song.text, 200);
-    if (!title) return;
-    const artist = cleanString(song.artist, 200);
-    const text = cleanString(song.text, 300) || (artist ? `${artist} - ${title}` : title);
+    const rawArtist = cleanString(song.artist, 200);
+    if (!title || isSystemOrAdTrack(title, rawArtist)) return;
+    const artist = cleanArtist(rawArtist);
+    const text = artist ? `${artist} - ${title}` : title;
     const art = cleanUrl(song.art);
     const duration = Math.max(0, Math.round(Number(entry.duration) || 0));
     const shId = Math.max(0, Math.round(Number(entry.sh_id) || 0));
@@ -317,11 +336,13 @@ export async function fetchStationApiData(stationApiUrl: string): Promise<{ info
   if (payload.playing_next?.song) {
     const nextSong = payload.playing_next.song;
     const title = cleanString(nextSong.title, 200) || cleanString(nextSong.text, 200);
-    if (title) {
+    const rawArtist = cleanString(nextSong.artist, 200);
+    if (title && !isSystemOrAdTrack(title, rawArtist)) {
+      const artist = cleanArtist(rawArtist);
       info.playing_next = {
         title,
-        artist: cleanString(nextSong.artist, 200),
-        text: cleanString(nextSong.text, 300) || title,
+        artist,
+        text: artist ? `${artist} - ${title}` : title,
         art: cleanUrl(nextSong.art),
       };
     }
@@ -337,7 +358,7 @@ export async function syncStationApi(channelId: string, overrideApiUrl?: string,
   const apiUrl = (overrideApiUrl ?? current?.station_api_url ?? '').trim();
   if (!apiUrl) return cached;
 
-  if (!force && cached.updated_at && Date.now() - cached.updated_at < 15_000) {
+  if (!force && cached.updated_at && Date.now() - cached.updated_at < 5_000) {
     return cached;
   }
 
@@ -392,9 +413,10 @@ export function songsForDate(channelId: string, date: string, recordings: Record
     FROM radio_songs WHERE channel_id=? ORDER BY played_at DESC LIMIT 400`).all(channelId) as Omit<RadioSong, 'recording' | 'is_current'>[];
 
   return rows
-    .filter(row => radioDate(row.played_at * 1000) === date)
+    .filter(row => radioDate(row.played_at * 1000) === date && !isSystemOrAdTrack(row.title, row.artist))
     .map(row => ({
       ...row,
+      artist: cleanArtist(row.artist),
       is_current: Boolean(currentPlayedAt && row.played_at === currentPlayedAt),
       recording: matchSongRecording(row.played_at, row.duration, recordings),
     }));
