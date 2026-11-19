@@ -1,7 +1,5 @@
 ---
 import '@fontsource-variable/source-sans-3';
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/500.css';
 import '../../../styles/theme.css';
 import Brand from '../../../components/Brand.astro';
 import Icon from '../../../components/Icon.astro';
@@ -173,11 +171,11 @@ const isNewestDay = date === days[0];
                         {item.programName ? (
                           <>
                             <strong class="segment-program">{item.programName}</strong>
-                            <small class="segment-time mono">{timeRange(item.start, item.end)} hrs · {recordingDurationLabel(item.start, item.end)}</small>
+                            <small class="segment-time">{timeRange(item.start, item.end)} hrs · {recordingDurationLabel(item.start, item.end)}</small>
                           </>
                         ) : (
                           <>
-                            <strong class="segment-time-primary mono">{timeRange(item.start, item.end)} hrs</strong>
+                            <strong class="segment-time-primary">{timeRange(item.start, item.end)} hrs</strong>
                             <small class="segment-duration">{recordingDurationLabel(item.start, item.end)}</small>
                           </>
                         )}
@@ -268,7 +266,7 @@ const isNewestDay = date === days[0];
               </div>
 
               <div class="scrubber-group">
-                <output id="play-time" class="mono">En directo</output>
+                <output id="play-time">En directo</output>
                 <input
                   id="play-progress"
                   type="range"
@@ -351,7 +349,7 @@ const isNewestDay = date === days[0];
                     data-played-at={song.played_at}
                   >
                     <td class="song-time-cell">
-                      <span class="mono">{radioHour(song.played_at * 1000)}</span>
+                      <span>{radioHour(song.played_at * 1000)}</span>
                       {song.is_current && <span class="song-live-pill">Ahora</span>}
                     </td>
                     <td class="song-title-td">
@@ -361,7 +359,7 @@ const isNewestDay = date === days[0];
                       </div>
                     </td>
                     <td class="song-artist-td" title={song.artist || stationName}>{song.artist || stationName}</td>
-                    <td class="song-duration-cell mono">{formatSongDuration(song.duration)}</td>
+                    <td class="song-duration-cell">{formatSongDuration(song.duration)}</td>
                     <td class="song-action-td">
                       {song.recording ? (
                         <button
@@ -373,7 +371,7 @@ const isNewestDay = date === days[0];
                           data-seek-art={song.art}
                         >
                           <Icon name="play" size={12}/>
-                          <span class="mono">{timeRange(song.recording.start, song.recording.end)}</span>
+                          <span>{timeRange(song.recording.start, song.recording.end)}</span>
                         </button>
                       ) : song.is_current ? (
                         <button type="button" class="button small song-seek-btn" data-trigger-live="true">
@@ -422,11 +420,11 @@ const isNewestDay = date === days[0];
               <tbody>
                 {selections.length ? selections.map(item => (
                   <tr>
-                    <td class="song-time-cell mono"><strong>{radioHour(item.start)}</strong></td>
+                    <td class="song-time-cell"><strong>{radioHour(item.start)}</strong></td>
                     <td class="song-title-td">
                       <strong>{item.programName ? `${item.programName} · ${timeRange(item.start, item.end)} hrs` : `Tramo ${timeRange(item.start, item.end)} hrs`}</strong>
                     </td>
-                    <td class="song-duration-cell mono">{recordingDurationLabel(item.start, item.end)}</td>
+                    <td class="song-duration-cell">{recordingDurationLabel(item.start, item.end)}</td>
                     <td class="song-action-td">
                       <button
                         type="button"
@@ -434,7 +432,7 @@ const isNewestDay = date === days[0];
                         data-chip={radioPath + item.name}
                       >
                         <Icon name="play" size={12}/>
-                        <span class="mono">{timeRange(item.start, item.end)}</span>
+                        <span>{timeRange(item.start, item.end)}</span>
                       </button>
                     </td>
                   </tr>
@@ -1139,15 +1137,15 @@ const isNewestDay = date === days[0];
         const seekTitle = `${song.artist ? song.artist + ' — ' : ''}${song.title}`;
         let actionHtml = '<span class="no-archive-tag">Sin corte</span>';
         if (song.recording) {
-          actionHtml = `<button type="button" class="button small song-seek-btn" data-seek-audio="${escapeHtml(song.recording.url)}" data-seek-offset="${Number(song.recording.offset) || 0}" data-seek-title="${escapeHtml(seekTitle)}" data-seek-art="${escapeHtml(song.art || '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><span class="mono">${escapeHtml(song.recording.range)}</span></button>`;
+          actionHtml = `<button type="button" class="button small song-seek-btn" data-seek-audio="${escapeHtml(song.recording.url)}" data-seek-offset="${Number(song.recording.offset) || 0}" data-seek-title="${escapeHtml(seekTitle)}" data-seek-art="${escapeHtml(song.art || '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><span>${escapeHtml(song.recording.range)}</span></button>`;
         } else if (song.isCurrent) {
           actionHtml = `<button type="button" class="button small song-seek-btn" data-trigger-live="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a6 6 0 0 0 0 8 M16 8a6 6 0 0 1 0 8 M4 4a12 12 0 0 0 0 16 M20 4a12 12 0 0 1 0 16 M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg><span>En directo</span></button>`;
         }
         return `<tr data-song-row data-has-recording="${song.recording ? 'true' : 'false'}" data-recording-name="${escapeHtml(song.recording?.name || '')}" data-played-at="${Number(song.playedAt) || 0}">
-          <td class="song-time-cell"><span class="mono">${escapeHtml(song.time)}</span>${song.isCurrent ? '<span class="song-live-pill">Ahora</span>' : ''}</td>
+          <td class="song-time-cell"><span>${escapeHtml(song.time)}</span>${song.isCurrent ? '<span class="song-live-pill">Ahora</span>' : ''}</td>
           <td class="song-title-td"><div class="song-title-cell">${song.art ? `<img src="${escapeHtml(song.art)}" alt="" class="song-thumb" loading="lazy"/>` : ''}<strong title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</strong></div></td>
           <td class="song-artist-td" title="${escapeHtml(artist)}">${escapeHtml(artist)}</td>
-          <td class="song-duration-cell mono">${durLabel}</td>
+          <td class="song-duration-cell">${durLabel}</td>
           <td class="song-action-td">${actionHtml}</td>
         </tr>`;
       }).join('');
@@ -1424,6 +1422,7 @@ const isNewestDay = date === days[0];
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
+  border-top: 1px solid var(--border);
 }
 .radio-hours li {
   border-top: 1px solid var(--border);
@@ -1469,15 +1468,17 @@ const isNewestDay = date === days[0];
   overflow-wrap: anywhere;
 }
 .segment-time-primary {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--heading);
   line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 .segment-time,
 .segment-duration {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .recording-row[aria-pressed="true"] .segment-program,
 .recording-row[aria-pressed="true"] .segment-time-primary {
@@ -1800,7 +1801,8 @@ const isNewestDay = date === days[0];
 .songs-panel :global(.song-time-cell) {
   white-space: nowrap;
   color: var(--heading);
-  font-weight: 500;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .songs-panel :global(.song-live-pill) {
   display: inline-block;
@@ -1847,19 +1849,18 @@ const isNewestDay = date === days[0];
 .songs-panel :global(.song-duration-cell) {
   color: var(--muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .songs-panel :global(.song-action-td) {
   white-space: nowrap;
 }
 .songs-panel :global(.song-seek-btn) {
-  font-size: 12px;
-  padding: 4px 8px;
+  font-size: 13px;
+  padding: 4px 10px;
   min-height: 30px;
-  gap: 5px;
+  gap: 6px;
   max-width: 100%;
-}
-.songs-panel :global(.song-seek-btn .mono) {
-  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .songs-panel :global(.no-archive-tag) {
   font-size: 13px;
