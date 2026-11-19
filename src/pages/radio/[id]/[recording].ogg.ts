@@ -29,6 +29,8 @@ const serve: APIRoute = async ({ params, request }) => {
       ...noIndex,
       'Accept-Ranges': 'bytes',
       'Content-Type': 'audio/ogg',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
       'X-Content-Duration': durationSec,
       'Content-Duration': durationSec,
     });

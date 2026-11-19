@@ -34,8 +34,9 @@ export const onRequest=defineMiddleware(async (context,next)=>{
   const { themeHash }=await import('./server/theme.ts');
   const media=new URL(process.env.MEDIA_ORIGIN||origin).origin;
   const radioPage=path.startsWith('/radio/');
+  const castScripts=radioPage?' https://www.gstatic.com https://www.google.com':'';
   const imgSrc=radioPage?"'self' data: blob: https:":"'self' data: blob:";
   const mediaSrc=radioPage?`'self' blob: https: http: ${media}`:`'self' blob: ${media}`;
-  response.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self' '${themeHash}'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imgSrc}; media-src ${mediaSrc}; connect-src 'self' ${media}; worker-src 'self' blob:; frame-ancestors ${embeddable?'*':"'none'"}; base-uri 'self'; form-action 'self'; object-src 'none'`);
+  response.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self' '${themeHash}'${castScripts}; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imgSrc}; media-src ${mediaSrc}; connect-src 'self' ${media}${castScripts}; frame-src 'self'${castScripts}; worker-src 'self' blob:; frame-ancestors ${embeddable?'*':"'none'"}; base-uri 'self'; form-action 'self'; object-src 'none'`);
   return response;
 });

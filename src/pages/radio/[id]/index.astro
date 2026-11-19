@@ -203,6 +203,8 @@ const nowPlayingArt = station.now_playing?.art || '';
             <audio id="radio-live" aria-label="Escuchar en directo" preload="auto" src={liveStreamUrl}></audio>
 
             <div class="custom-controls">
+              <button id="radio-airplay" type="button" class="icon-only-btn" hidden aria-label="Escuchar con AirPlay" title="AirPlay">AirPlay</button>
+              <button id="radio-cast" type="button" class="icon-only-btn" hidden aria-label="Enviar a Google Cast" title="Google Cast">Cast</button>
               <button id="skip-back" type="button" class="skip-btn" aria-label="Retroceder 15 segundos" title="Retroceder 15 segundos">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/>
@@ -458,6 +460,8 @@ const nowPlayingArt = station.now_playing?.art || '';
 
     let choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
     let mode: 'live' | 'archive' = 'live';
+    const { initRadioWireless } = await import('../../../lib/radio-wireless');
+    initRadioWireless({ audio, live, active: () => mode === 'live' ? live : audio, title: stationFallbackName, onEnd: () => switchToPresent(true) });
     let activeIndex = -1;
     let activeStartMs = 0;
     let activeEndMs = 0;
