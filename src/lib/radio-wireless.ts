@@ -27,11 +27,15 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
   let controller: any;
   let loadedUrl = '';
   let loading = false;
+  let requestingSession = false;
+  let pendingPlayer: HTMLAudioElement | null = null;
+  let endedMedia: unknown = null;
   const connected = () => Boolean(context?.getCurrentSession());
   async function load(player: HTMLAudioElement) {
     const session = context?.getCurrentSession();
-    if (!session || loading) return;
-    const source = player.currentSrc || player.src;
+    if (!session) return;
+    if (loading) { pendingPlayer = player; return; }
+    const source = player.src || player.currentSrc;
     if (!source) { status.textContent = 'Selecciona una grabación o el directo.'; return; }
     const url = new URL(source, location.href); url.hash = '';
     const api = win.chrome.cast.media;
@@ -49,14 +53,20 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
     try {
       await session.loadMedia(request);
       loadedUrl = url.href;
+      endedMedia = null;
       players.forEach(item => item.pause());
       status.textContent = 'Escuchando en ' + session.getCastDevice().friendlyName;
     } catch { status.textContent = 'No se pudo enviar este audio. Comprueba que el dispositivo pueda acceder a la fuente y reproducir su formato.'; }
-    finally { loading = false; }
+    finally {
+      loading = false;
+      const next = pendingPlayer; pendingPlayer = null;
+      if (next) void load(next);
+    }
   }
   for (const player of players) player.addEventListener('play', () => {
-    if (!connected() || loading) return;
-    const url = new URL(player.currentSrc || player.src, location.href); url.hash = '';
+    if (!connected()) return;
+    if (loading) { pendingPlayer = player; return; }
+    const url = new URL(player.src || player.currentSrc, location.href); url.hash = '';
     if (url.href !== loadedUrl) void load(player);
     else { player.pause(); if (remote?.isPaused) controller.playOrPause(); }
   });
@@ -85,11 +95,24 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
     event.stopImmediatePropagation(); controller.muteOrUnmute();
   }, true);
   castButton.onclick = async () => {
+    if (requestingSession) return;
+    requestingSession = true;
     try {
       if (connected()) { context.endCurrentSession(true); return; }
+      status.textContent = 'Selecciona un dispositivo Google Cast.';
       await context.requestSession();
-      await load(options.active());
-    } catch { status.textContent = 'No se inició la conexión con Google Cast.'; }
+    } catch (error) {
+      const code = typeof error === 'string' ? error : (error as { code?: string })?.code;
+      if (context.getCastState() === win.cast.framework.CastState.NO_DEVICES_AVAILABLE || code === 'receiver_unavailable') {
+        status.textContent = 'Chrome no detecta dispositivos Google Cast. Comprueba que el receptor esté encendido y conectado a la misma red, y que Chrome tenga permiso de acceso a la red local.';
+      } else if (code === 'cancel') {
+        status.textContent = 'Selección de dispositivo cancelada.';
+      } else if (code === 'timeout') {
+        status.textContent = 'El dispositivo no respondió. Vuelve a intentar la conexión.';
+      } else {
+        status.textContent = 'No se pudo conectar con Google Cast' + (code ? ` (${code})` : '') + '.';
+      }
+    } finally { requestingSession = false; }
   };
   function initialize(available: boolean) {
     if (!available || !win.cast?.framework) return;
@@ -98,6 +121,24 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
     context.setOptions({ receiverApplicationId: win.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: win.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
     remote = new framework.RemotePlayer(); controller = new framework.RemotePlayerController(remote);
     castButton.hidden = false;
+    // Use the SDK's native selector: it also handles sessions started from Chrome.
+    const launcher = document.createElement('google-cast-launcher');
+    launcher.id = 'radio-cast-launcher';
+    launcher.setAttribute('aria-label', 'Enviar audio con Google Cast');
+    launcher.setAttribute('title', 'Enviar audio con Google Cast');
+    launcher.style.cssText = 'display:block;width:44px;height:44px;padding:8px;--connected-color:#ffffff;--disconnected-color:#ffffff;';
+    castButton.before(launcher);
+    castButton.hidden = true;
+    const updateAvailability = () => {
+      const unavailable = context.getCastState() === framework.CastState.NO_DEVICES_AVAILABLE;
+      castButton.title = unavailable ? 'Google Cast: no se detectan dispositivos en la red' : 'Enviar a Google Cast';
+      castButton.setAttribute('aria-label', castButton.title);
+      launcher.setAttribute('title', castButton.title);
+      if (unavailable && !connected()) status.textContent = 'No se detectan receptores Google Cast en esta red. Enciende el receptor y comprueba el permiso de red local de Chrome.';
+      else if (!connected() && !requestingSession) status.textContent = '';
+    };
+    context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, updateAvailability);
+    updateAvailability();
     controller.addEventListener(framework.RemotePlayerEventType.CURRENT_TIME_CHANGED, () => {
       if (!connected() || !remote.isMediaLoaded) return;
       const progress = document.querySelector<HTMLInputElement>('#play-progress')!;
@@ -113,14 +154,27 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
       toggle.querySelector<HTMLElement>('.icon-play')!.hidden = !remote.isPaused;
       toggle.querySelector<HTMLElement>('.icon-pause')!.hidden = remote.isPaused;
     });
-    context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, () => {
+    context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, (event: any) => {
       castButton.textContent = connected() ? 'Desconectar Cast' : 'Cast';
       castButton.setAttribute('aria-pressed', String(connected()));
       if (!connected()) { loadedUrl = ''; status.textContent = 'Google Cast desconectado'; }
+      if (event.sessionState === framework.SessionState.SESSION_STARTED) void load(options.active());
+      if (event.sessionState === framework.SessionState.SESSION_RESUMED) {
+        const media = context.getCurrentSession()?.getMediaSession();
+        if (media) { loadedUrl = media.media.contentId; players.forEach(player => player.pause()); status.textContent = 'Google Cast conectado'; }
+        else void load(options.active());
+      }
+      if (event.sessionState === framework.SessionState.SESSION_START_FAILED) {
+        status.textContent = `No se pudo conectar con el receptor (${event.errorCode || 'sesión fallida'}).`;
+      }
     });
     controller.addEventListener(framework.RemotePlayerEventType.PLAYER_STATE_CHANGED, () => {
       const media = context.getCurrentSession()?.getMediaSession();
-      if (media?.idleReason === win.chrome.cast.media.IdleReason.FINISHED) options.onEnd();
+      if (media?.idleReason === win.chrome.cast.media.IdleReason.FINISHED && endedMedia !== media) {
+        endedMedia = media;
+        options.onEnd();
+        void load(options.live);
+      }
     });
   }
   win.__onGCastApiAvailable = initialize;
