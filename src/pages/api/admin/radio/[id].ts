@@ -98,6 +98,9 @@ export const GET: APIRoute = async ({ params, url, locals, redirect, request }) 
   // Generate and download custom MP3 clip: YYYY-MM-DD_HH:MM_PROG.MP3
   if (action === 'clip') {
     const date = (url.searchParams.get('date') || '').trim();
+    const grupo = (url.searchParams.get('grupo') || '').trim();
+    const offsetParam = url.searchParams.get('offsetSec');
+    const durationParam = url.searchParams.get('durationSec');
     const startStr = (url.searchParams.get('start') || '').trim();
     const endStr = (url.searchParams.get('end') || '').trim();
     const progInput = (url.searchParams.get('program') || '').trim();
@@ -105,71 +108,106 @@ export const GET: APIRoute = async ({ params, url, locals, redirect, request }) 
     if (!radioDays().includes(date)) {
       return new Response('Selecciona una fecha válida dentro de los últimos 5 días.', { status: 400 });
     }
-    const startMs = parseChileDateTime(date, startStr);
-    let endMs = parseChileDateTime(date, endStr);
-    if (startMs === null || endMs === null) {
-      return new Response('Ingresa una hora de inicio y término válidas (HH:MM).', { status: 400 });
-    }
-    if (endMs <= startMs) {
-      endMs += 86_400_000;
-    }
-    const clipDurationSec = (endMs - startMs) / 1000;
-    if (clipDurationSec < 3 || clipDurationSec > 4 * 3600) {
-      return new Response('El recorte debe durar entre 3 segundos y 4 horas.', { status: 400 });
-    }
 
-    const allRecordings = recordingsFor(id);
-    const overlapping = allRecordings
-      .filter(rec => rec.end > startMs && rec.start < endMs)
-      .map(rec => ({ rec, path: resolveRecordingPath(id, rec.name) }))
-      .filter((item): item is { rec: typeof allRecordings[number]; path: string } => Boolean(item.path));
-
-    if (!overlapping.length) {
-      return new Response(`No hay audio grabado entre ${startStr} y ${endStr} en la fecha ${date}.`, { status: 404 });
-    }
-
-    const programs = programsForChannel(id);
-    const matchedProg = matchProgramAt(programs, Math.round((startMs + endMs) / 2));
     const channelRow = db.prepare('SELECT name FROM channels WHERE id=?').get(id) as { name: string } | undefined;
-    const programLabel = progInput || matchedProg?.name || channelRow?.name || 'PROGRAMA';
-    const filename = formatClipFilename(date, startStr, programLabel);
-
     const tempFile = join(tmpdir(), `clip-${id}-${randomBytes(8).toString('hex')}.mp3`);
+
     try {
+      let programLabel = progInput || channelRow?.name || 'PROGRAMA';
+      let startLabel = startStr || '00:00';
       const args: string[] = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-y'];
-      if (overlapping.length === 1) {
-        const { rec, path } = overlapping[0];
-        const offsetSec = Math.max(0, (startMs - rec.start) / 1000);
-        const availEndMs = Math.min(endMs, rec.end);
-        const lengthSec = Math.max(1, (availEndMs - Math.max(startMs, rec.start)) / 1000);
+
+      if (grupo && offsetParam !== null && durationParam !== null) {
+        const offsetSec = Math.max(0, Number(offsetParam) || 0);
+        const durationSec = Number(durationParam) || 0;
+        if (!(durationSec >= 2 && durationSec <= 4 * 3600)) {
+          return new Response('El recorte debe durar entre 2 segundos y 4 horas.', { status: 400 });
+        }
+        const resolved = await resolveMergedGroupAudio(id, date, grupo);
+        if (!resolved) {
+          return new Response('No se encontró la emisión seleccionada para recortar.', { status: 404 });
+        }
+        const safeOffset = Math.min(offsetSec, Math.max(0, resolved.durationSec - 1));
+        const safeDuration = Math.max(1, Math.min(durationSec, Math.max(1, resolved.durationSec - safeOffset)));
         args.push(
-          '-ss', offsetSec.toFixed(2),
-          '-t', lengthSec.toFixed(2),
-          '-i', path,
-          '-vn', '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-metadata', `title=${programLabel} (${date} ${startStr}-${endStr})`,
+          '-i', resolved.filePath,
+          '-ss', safeOffset.toFixed(2),
+          '-t', safeDuration.toFixed(2),
+          '-vn', '-sn', '-dn',
+          '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+          '-metadata', `title=${programLabel} (${date})`,
           tempFile
         );
       } else {
-        const filterParts: string[] = [];
-        overlapping.forEach(({ rec, path }, idx) => {
+        const startMs = parseChileDateTime(date, startStr);
+        let endMs = parseChileDateTime(date, endStr);
+        if (startMs === null || endMs === null) {
+          return new Response('Ingresa una hora de inicio y término válidas (HH:MM).', { status: 400 });
+        }
+        if (endMs <= startMs) {
+          endMs += 86_400_000;
+        }
+        const clipDurationSec = (endMs - startMs) / 1000;
+        if (clipDurationSec < 2 || clipDurationSec > 4 * 3600) {
+          return new Response('El recorte debe durar entre 2 segundos y 4 horas.', { status: 400 });
+        }
+
+        const allRecordings = recordingsFor(id);
+        const overlapping = allRecordings
+          .filter(rec => rec.end > startMs && rec.start < endMs)
+          .map(rec => ({ rec, path: resolveRecordingPath(id, rec.name) }))
+          .filter((item): item is { rec: typeof allRecordings[number]; path: string } => Boolean(item.path));
+
+        if (!overlapping.length) {
+          return new Response(`No hay audio grabado entre ${startStr} y ${endStr} en la fecha ${date}.`, { status: 404 });
+        }
+
+        const programs = programsForChannel(id);
+        const matchedProg = matchProgramAt(programs, Math.round((startMs + endMs) / 2));
+        programLabel = progInput || matchedProg?.name || channelRow?.name || 'PROGRAMA';
+        startLabel = startStr;
+
+        if (overlapping.length === 1) {
+          const { rec, path } = overlapping[0];
           const offsetSec = Math.max(0, (startMs - rec.start) / 1000);
           const availEndMs = Math.min(endMs, rec.end);
           const lengthSec = Math.max(1, (availEndMs - Math.max(startMs, rec.start)) / 1000);
-          args.push('-ss', offsetSec.toFixed(2), '-t', lengthSec.toFixed(2), '-i', path);
-          filterParts.push(`[${idx}:a:0]`);
-        });
-        args.push(
-          '-filter_complex', `${filterParts.join('')}concat=n=${overlapping.length}:v=0:a=1[outa]`,
-          '-map', '[outa]',
-          '-vn', '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-metadata', `title=${programLabel} (${date} ${startStr}-${endStr})`,
-          tempFile
-        );
+          args.push(
+            '-i', path,
+            '-ss', offsetSec.toFixed(2),
+            '-t', lengthSec.toFixed(2),
+            '-vn', '-sn', '-dn',
+            '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-metadata', `title=${programLabel} (${date} ${startStr}-${endStr})`,
+            tempFile
+          );
+        } else {
+          const filterParts: string[] = [];
+          const trimFilters: string[] = [];
+          overlapping.forEach(({ rec, path }, idx) => {
+            const offsetSec = Math.max(0, (startMs - rec.start) / 1000);
+            const availEndMs = Math.min(endMs, rec.end);
+            const lengthSec = Math.max(1, (availEndMs - Math.max(startMs, rec.start)) / 1000);
+            args.push('-i', path);
+            trimFilters.push(`[${idx}:a:0]atrim=start=${offsetSec.toFixed(2)}:duration=${lengthSec.toFixed(2)},asetpts=PTS-STARTPTS[a${idx}]`);
+            filterParts.push(`[a${idx}]`);
+          });
+          args.push(
+            '-filter_complex', `${trimFilters.join(';')};${filterParts.join('')}concat=n=${overlapping.length}:v=0:a=1[outa]`,
+            '-map', '[outa]',
+            '-vn', '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-metadata', `title=${programLabel} (${date} ${startStr}-${endStr})`,
+            tempFile
+          );
+        }
       }
 
-      await runFile('ffmpeg', args, { timeout: 60_000 });
+      const filename = formatClipFilename(date, startLabel, programLabel);
+      await runFile('ffmpeg', args, { timeout: 90_000 });
       const mp3Bytes = await readFile(tempFile);
+      if (!mp3Bytes.byteLength) {
+        return new Response('El tramo seleccionado no contiene audio válido.', { status: 422 });
+      }
       audit(locals.user.id, 'radio_clip_created', `${id}:${filename}`);
       const safeAscii = filename.replace(/:/g, '_');
       return new Response(mp3Bytes, {
@@ -180,8 +218,9 @@ export const GET: APIRoute = async ({ params, url, locals, redirect, request }) 
           'Content-Disposition': `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
         },
       });
-    } catch {
-      return new Response('No se pudo generar el recorte MP3 con FFmpeg.', { status: 500 });
+    } catch (err) {
+      const detail = err instanceof Error && 'stderr' in err ? String((err as { stderr?: unknown }).stderr || '').trim().slice(0, 180) : '';
+      return new Response(detail ? `No se pudo generar el MP3: ${detail}` : 'No se pudo generar el recorte MP3 con FFmpeg.', { status: 500 });
     } finally {
       await rm(tempFile, { force: true }).catch(() => {});
     }

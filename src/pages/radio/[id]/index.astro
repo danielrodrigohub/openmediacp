@@ -71,8 +71,6 @@ const groupAudioUrl = (item: typeof selections[number]) =>
     : radioPath + item.segments[0].name;
 const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
-const isOldestDay = date === days[days.length - 1];
-const isNewestDay = date === days[0];
 ---
 <!doctype html>
 <html lang="es-CL">
@@ -113,27 +111,7 @@ const isNewestDay = date === days[0];
         </div>
 
         <div class="card-body">
-          <div class="date-controls">
-            <button
-              class="button icon-step"
-              id="previous-day"
-              type="button"
-              aria-label="Día anterior"
-              disabled={isOldestDay}
-            >‹</button>
-            <label class="date-picker">
-              <Icon name="calendar" size={16}/>
-              <span class="sr-only">Elegir fecha</span>
-              <input type="date" id="radio-date" value={date} min={days[days.length - 1]} max={days[0]}/>
-            </label>
-            <button
-              class="button icon-step"
-              id="next-day"
-              type="button"
-              aria-label="Día siguiente"
-              disabled={isNewestDay}
-            >›</button>
-          </div>
+          <input type="hidden" id="radio-date" value={date} data-min={days[days.length - 1]} data-max={days[0]}/>
 
           <nav class="radio-days" aria-label="Días disponibles">
             {days.map((day, index) => (
@@ -313,7 +291,15 @@ const isNewestDay = date === days[0];
                 </button>
 
                 <button id="share-recording" type="button" class="icon-only-btn" aria-label="Copiar enlace" title="Copiar enlace">
-                  <span id="share-icon-link"><Icon name="link" size={17}/></span>
+                  <span id="share-icon-link">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="18" cy="5" r="3"/>
+                      <circle cx="6" cy="12" r="3"/>
+                      <circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                  </span>
                   <span id="share-icon-check" hidden><Icon name="check" size={17}/></span>
                 </button>
               </div>
@@ -1117,7 +1103,9 @@ const isNewestDay = date === days[0];
 
     async function changeDate(date: string, push = true) {
       const currentDateInput = document.querySelector<HTMLInputElement>('#radio-date');
-      if (!currentDateInput || !date || date < currentDateInput.min || date > currentDateInput.max) return;
+      const minDate = currentDateInput?.dataset.min || currentDateInput?.min || '';
+      const maxDate = currentDateInput?.dataset.max || currentDateInput?.max || '';
+      if (!currentDateInput || !date || (minDate && date < minDate) || (maxDate && date > maxDate)) return;
       const url = new URL(location.href);
       url.searchParams.set('fecha', date);
       url.searchParams.delete('corte');
@@ -1171,7 +1159,7 @@ const isNewestDay = date === days[0];
 
     window.addEventListener('popstate', () => {
       const input = document.querySelector<HTMLInputElement>('#radio-date');
-      void changeDate(new URL(location.href).searchParams.get('fecha') || input?.max || '', false);
+      void changeDate(new URL(location.href).searchParams.get('fecha') || input?.dataset.max || '', false);
     });
 
     function escapeHtml(str: string) {

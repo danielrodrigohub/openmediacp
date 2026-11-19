@@ -66,12 +66,33 @@ const groupedEmissions = days.flatMap(d => {
 const recentSongs = apiUrl
   ? days.flatMap(d => {
       const dayRecs = allRecordings.filter(r => radioDate(r.start) === d);
-      return songsForDate(channel.id, d, dayRecs, stationInfo.now_playing?.played_at).map(s => ({
-        ...s,
-        dateStr: d,
-        startHhmm: radioHour(s.played_at * 1000),
-        endHhmm: radioHour((s.played_at + Math.max(60, s.duration || 180)) * 1000),
-      }));
+      const dayGroups = groupedEmissions.filter(g => g.dateStr === d);
+      return songsForDate(channel.id, d, dayRecs, stationInfo.now_playing?.played_at).map(s => {
+        let groupId = '';
+        let groupOffset = 0;
+        if (s.recording) {
+          for (const g of dayGroups) {
+            let acc = 0;
+            for (const seg of g.segments) {
+              if (seg.name === s.recording.name) {
+                groupId = g.id;
+                groupOffset = Math.round(acc + s.recording.offset);
+                break;
+              }
+              acc += Math.max(1, (seg.end - seg.start) / 1000);
+            }
+            if (groupId) break;
+          }
+        }
+        return {
+          ...s,
+          dateStr: d,
+          groupId,
+          groupOffset,
+          clipDur: Math.max(30, s.duration || 210),
+          startHhmm: radioHour(s.played_at * 1000),
+        };
+      });
     }).slice(0, 60)
   : [];
 
@@ -103,7 +124,6 @@ const nowClock = chileClock();
 const latestEmission = groupedEmissions[0];
 const defaultClipDate = latestEmission?.dateStr || today;
 const defaultClipStart = latestEmission?.startHhmm || '08:00';
-const defaultClipEnd = latestEmission?.endHhmm || '09:00';
 const defaultClipProg = liveStatus.activeProgram?.name
   || latestEmission?.programName
   || stationInfo.name
@@ -149,92 +169,121 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
           <span class="heading-meta">128 kbps · Hora Chile</span>
         </div>
         <div class="card-body clipper-body">
-          <form id="radio-clip-form" action={`/api/admin/radio/${channel.id}`} method="GET" target="_blank">
-            <input type="hidden" name="action" value="clip"/>
-            <div class="clipper-grid">
-              <label>
-                Fecha
-                <select name="date" id="clip-date" class="field-input" required>
-                  {days.map(d => (
-                    <option value={d} selected={d === defaultClipDate}>
-                      {d === today ? `${d} (Hoy)` : d}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          {groupedEmissions.length ? (
+            <form id="radio-clip-form" data-clip-endpoint={`/api/admin/radio/${channel.id}`}>
+              <div class="clipper-top-grid">
+                <label>
+                  Emisión a recortar
+                  <select id="clip-emission-select" class="field-input">
+                    {groupedEmissions.map((em, idx) => (
+                      <option
+                        value={em.id}
+                        selected={idx === 0}
+                        data-date={em.dateStr}
+                        data-start={em.startHhmm}
+                        data-end={em.endHhmm}
+                        data-duration={Math.round(em.totalSeconds)}
+                        data-program={em.programSlug}
+                        data-audio={em.audioUrl}
+                      >
+                        {em.dateStr === today ? 'Hoy' : em.dateStr} · {em.startHhmm} – {em.endHhmm} hrs{em.programName ? ` · ${em.programName}` : ''} ({em.durationLabel})
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label>
-                Programa o etiqueta
-                <input
-                  type="text"
-                  name="program"
-                  id="clip-program"
-                  class="field-input"
-                  maxlength="50"
-                  list="channel-programs-list"
-                  value={defaultClipProg}
-                  placeholder="Ej: MATINAL"
-                  required
-                />
-                <datalist id="channel-programs-list">
-                  {programs.map(p => <option value={p.name}/>)}
-                </datalist>
-              </label>
-
-              <label>
-                Hora de inicio
-                <input
-                  type="time"
-                  name="start"
-                  id="clip-start"
-                  class="field-input"
-                  value={defaultClipStart}
-                  required
-                />
-              </label>
-
-              <label>
-                Hora de término
-                <input
-                  type="time"
-                  name="end"
-                  id="clip-end"
-                  class="field-input"
-                  value={defaultClipEnd}
-                  required
-                />
-              </label>
-            </div>
-
-            <p id="clip-validation-error" class="clip-error" role="alert" hidden></p>
-
-            <div class="clip-preview-strip">
-              <div class="clip-filename-box">
-                <small>Archivo de salida</small>
-                <code id="clip-filename-preview">{defaultFilenamePreview}</code>
+                <label>
+                  Nombre del archivo
+                  <input
+                    type="text"
+                    id="clip-program"
+                    class="field-input"
+                    maxlength="50"
+                    list="channel-programs-list"
+                    value={defaultClipProg}
+                    placeholder="Ej: Matinal"
+                    required
+                  />
+                  <datalist id="channel-programs-list">
+                    {programs.map(p => <option value={p.name}/>)}
+                  </datalist>
+                </label>
               </div>
-              <button type="submit" class="button primary" disabled={!allRecordings.length}>
-                <Icon name="down" size={16}/>
-                Descargar MP3
-              </button>
-            </div>
-          </form>
 
-          <div class="admin-audio-preview" id="admin-preview-box" hidden={!latestEmission}>
-            <div class="admin-preview-head">
-              <strong id="admin-preview-label">
-                {latestEmission
-                  ? `${latestEmission.programName || 'Emisión'} · ${latestEmission.dateStr === today ? 'Hoy' : latestEmission.dateStr} · ${latestEmission.startHhmm} – ${latestEmission.endHhmm} hrs`
-                  : 'Vista previa'}
-              </strong>
-            </div>
-            <audio
-              id="admin-preview-audio"
-              controls
-              preload="none"
-              src={latestEmission ? latestEmission.audioUrl : undefined}
-            ></audio>
-          </div>
+              <audio
+                id="admin-preview-audio"
+                preload="metadata"
+                src={latestEmission ? latestEmission.audioUrl : undefined}
+              ></audio>
+
+              <div class="trimmer-box" id="trimmer-box">
+                <div class="trimmer-transport">
+                  <button type="button" class="button small" id="trim-play-btn" aria-label="Reproducir o pausar">
+                    <span id="trim-icon-play"><Icon name="play" size={14}/></span>
+                    <span id="trim-icon-pause" hidden><Icon name="pause" size={14}/></span>
+                    <span id="trim-play-label">Escuchar</span>
+                  </button>
+                  <button type="button" class="button small" id="trim-back-10" title="Retroceder 10 segundos">-10 s</button>
+                  <button type="button" class="button small" id="trim-fwd-10" title="Avanzar 10 segundos">+10 s</button>
+                  <button type="button" class="button small outline" id="trim-preview-selection">
+                    Escuchar recorte
+                  </button>
+                  <span class="trim-clock tabular-cell" id="trim-current-clock">0:00 / 0:00</span>
+                </div>
+
+                <div class="trim-timeline-wrap">
+                  <div class="trim-track" id="trim-track" role="group" aria-label="Línea de tiempo del recorte">
+                    <div class="trim-selection" id="trim-selection"></div>
+                    <div class="trim-playhead" id="trim-playhead"></div>
+                    <button
+                      type="button"
+                      class="trim-handle trim-handle-start"
+                      id="trim-handle-start"
+                      aria-label="Mover inicio del recorte"
+                      title="Arrastra para ajustar el inicio"
+                    ></button>
+                    <button
+                      type="button"
+                      class="trim-handle trim-handle-end"
+                      id="trim-handle-end"
+                      aria-label="Mover término del recorte"
+                      title="Arrastra para ajustar el término"
+                    ></button>
+                  </div>
+                </div>
+
+                <div class="trim-markers-bar">
+                  <div class="trim-marker-item">
+                    <button type="button" class="button small" id="trim-mark-start">Marcar inicio aquí</button>
+                    <span class="tabular-cell">Inicio: <strong id="trim-start-readout">0:00</strong></span>
+                  </div>
+                  <div class="trim-marker-item">
+                    <button type="button" class="button small" id="trim-mark-end">Marcar fin aquí</button>
+                    <span class="tabular-cell">Fin: <strong id="trim-end-readout">0:00</strong></span>
+                  </div>
+                  <div class="trim-marker-summary">
+                    <span class="tabular-cell">Duración: <strong id="trim-dur-readout">0:00</strong></span>
+                    <button type="button" class="text-link small-preset" id="trim-reset-btn">Todo el bloque</button>
+                  </div>
+                </div>
+              </div>
+
+              <p id="clip-validation-error" class="clip-error" role="alert" hidden></p>
+
+              <div class="clip-preview-strip">
+                <div class="clip-filename-box">
+                  <small>Archivo a descargar</small>
+                  <strong id="clip-filename-preview">{defaultFilenamePreview}</strong>
+                </div>
+                <button type="submit" class="button primary" id="clip-download-btn">
+                  <Icon name="down" size={16}/>
+                  <span id="clip-download-label">Descargar MP3</span>
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p class="hint">Todavía no hay emisiones grabadas para recortar.</p>
+          )}
         </div>
       </section>
 
@@ -442,8 +491,7 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
                           <button
                             type="button"
                             class="button small"
-                            data-preview-audio={rec.audioUrl}
-                            data-preview-title={`${rec.programName || 'Emisión'} · ${rec.dateStr === today ? 'Hoy' : rec.dateStr} · ${rec.startHhmm} – ${rec.endHhmm} hrs`}
+                            data-preview-group={rec.id}
                           >
                             <Icon name="play" size={13}/>
                             Escuchar
@@ -452,11 +500,10 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
                             type="button"
                             class="button small outline"
                             data-fill-clip
+                            data-clip-group={rec.id}
                             data-clip-date={rec.dateStr}
                             data-clip-start={rec.startHhmm}
-                            data-clip-end={rec.endHhmm}
                             data-clip-prog={rec.programSlug}
-                            data-clip-audio={rec.audioUrl}
                           >
                             Recortar
                           </button>
@@ -503,16 +550,17 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
                       </td>
                       <td class="tabular-cell nowrap-cell">{formatSongDuration(song.duration)}</td>
                       <td class="prog-actions-cell">
-                        {song.recording ? (
+                        {song.groupId ? (
                           <button
                             type="button"
                             class="button small outline"
                             data-fill-clip
+                            data-clip-group={song.groupId}
                             data-clip-date={song.dateStr}
                             data-clip-start={song.startHhmm}
-                            data-clip-end={song.endHhmm}
+                            data-clip-offset={song.groupOffset}
+                            data-clip-length={song.clipDur}
                             data-clip-prog={`${song.artist ? song.artist + ' ' : ''}${song.title}`}
-                            data-clip-audio={`/api/admin/radio/${channel.id}?action=audio&recording=${encodeURIComponent(song.recording.name)}#t=${song.recording.offset}`}
                           >
                             Recortar
                           </button>
@@ -574,7 +622,7 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
                   value={effectiveStream}
                 />
                 <p class="hint">
-                  Si se deja en blanco con API activa, usa el <code>listen_url</code> de la estación.
+                  Si se deja en blanco con API activa, usa la dirección de transmisión entregada por la estación.
                 </p>
 
                 <div class="radio-checks-group">
@@ -609,15 +657,49 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
 
 <script>
   const clipForm = document.querySelector<HTMLFormElement>('#radio-clip-form');
-  const clipDate = document.querySelector<HTMLSelectElement>('#clip-date');
-  const clipStart = document.querySelector<HTMLInputElement>('#clip-start');
-  const clipEnd = document.querySelector<HTMLInputElement>('#clip-end');
+  const emissionSelect = document.querySelector<HTMLSelectElement>('#clip-emission-select');
   const clipProg = document.querySelector<HTMLInputElement>('#clip-program');
   const clipPreview = document.querySelector<HTMLElement>('#clip-filename-preview');
   const clipError = document.querySelector<HTMLElement>('#clip-validation-error');
-  const previewBox = document.querySelector<HTMLElement>('#admin-preview-box');
+  const downloadBtn = document.querySelector<HTMLButtonElement>('#clip-download-btn');
+  const downloadLabel = document.querySelector<HTMLElement>('#clip-download-label');
+
   const previewAudio = document.querySelector<HTMLAudioElement>('#admin-preview-audio');
-  const previewLabel = document.querySelector<HTMLElement>('#admin-preview-label');
+  const playBtn = document.querySelector<HTMLButtonElement>('#trim-play-btn');
+  const iconPlay = document.querySelector<HTMLElement>('#trim-icon-play');
+  const iconPause = document.querySelector<HTMLElement>('#trim-icon-pause');
+  const playLabel = document.querySelector<HTMLElement>('#trim-play-label');
+  const back10Btn = document.querySelector<HTMLButtonElement>('#trim-back-10');
+  const fwd10Btn = document.querySelector<HTMLButtonElement>('#trim-fwd-10');
+  const previewSelBtn = document.querySelector<HTMLButtonElement>('#trim-preview-selection');
+  const currentClock = document.querySelector<HTMLElement>('#trim-current-clock');
+  const trimTrack = document.querySelector<HTMLElement>('#trim-track');
+  const trimSelection = document.querySelector<HTMLElement>('#trim-selection');
+  const trimPlayhead = document.querySelector<HTMLElement>('#trim-playhead');
+  const handleStart = document.querySelector<HTMLButtonElement>('#trim-handle-start');
+  const handleEnd = document.querySelector<HTMLButtonElement>('#trim-handle-end');
+  const markStartBtn = document.querySelector<HTMLButtonElement>('#trim-mark-start');
+  const markEndBtn = document.querySelector<HTMLButtonElement>('#trim-mark-end');
+  const resetTrimBtn = document.querySelector<HTMLButtonElement>('#trim-reset-btn');
+  const startReadout = document.querySelector<HTMLElement>('#trim-start-readout');
+  const endReadout = document.querySelector<HTMLElement>('#trim-end-readout');
+  const durReadout = document.querySelector<HTMLElement>('#trim-dur-readout');
+
+  let totalDur = 0;
+  let trimStart = 0;
+  let trimEnd = 0;
+  let stopAtTrimEnd = false;
+  let draggingHandle: 'start' | 'end' | null = null;
+
+  function fmtTime(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const total = Math.floor(seconds);
+    const hrs = Math.floor(total / 3600);
+    const mins = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 
   function sanitizeSlug(val: string) {
     return (
@@ -631,28 +713,243 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
     );
   }
 
+  function getSelectedOption() {
+    return emissionSelect?.selectedOptions[0] || null;
+  }
+
   function updateFilenamePreview() {
-    if (!clipDate || !clipStart || !clipProg || !clipPreview) return;
-    const d = clipDate.value || 'AAAA-MM-DD';
-    const s = (clipStart.value || '00:00').slice(0, 5);
+    const opt = getSelectedOption();
+    if (!opt || !clipProg || !clipPreview) return;
+    const d = opt.dataset.date || 'AAAA-MM-DD';
+    const baseStart = (opt.dataset.start || '00:00').slice(0, 5);
     const p = sanitizeSlug(clipProg.value || 'PROGRAMA');
-    clipPreview.textContent = `${d}_${s}_${p}.MP3`;
+    clipPreview.textContent = `${d}_${baseStart}_${p}.MP3`;
     if (clipError) clipError.hidden = true;
   }
 
-  [clipDate, clipStart, clipEnd, clipProg].forEach(el => {
-    el?.addEventListener('input', updateFilenamePreview);
-    el?.addEventListener('change', updateFilenamePreview);
-  });
+  function renderTrimmer() {
+    const dur = Math.max(1, totalDur);
+    const startPct = Math.max(0, Math.min(100, (trimStart / dur) * 100));
+    const endPct = Math.max(startPct, Math.min(100, (trimEnd / dur) * 100));
+    const cur = previewAudio && Number.isFinite(previewAudio.currentTime) ? previewAudio.currentTime : 0;
+    const curPct = Math.max(0, Math.min(100, (cur / dur) * 100));
 
-  clipForm?.addEventListener('submit', event => {
-    if (!clipStart || !clipEnd || !clipError) return;
-    if (clipStart.value && clipEnd.value && clipStart.value === clipEnd.value) {
-      event.preventDefault();
-      clipError.textContent = 'La hora de término debe ser distinta a la hora de inicio.';
-      clipError.hidden = false;
+    if (trimSelection) {
+      trimSelection.style.left = `${startPct}%`;
+      trimSelection.style.width = `${Math.max(0.5, endPct - startPct)}%`;
+    }
+    if (handleStart) handleStart.style.left = `${startPct}%`;
+    if (handleEnd) handleEnd.style.left = `${endPct}%`;
+    if (trimPlayhead) trimPlayhead.style.left = `${curPct}%`;
+    if (startReadout) startReadout.textContent = fmtTime(trimStart);
+    if (endReadout) endReadout.textContent = fmtTime(trimEnd);
+    if (durReadout) durReadout.textContent = fmtTime(Math.max(0, trimEnd - trimStart));
+    if (currentClock) currentClock.textContent = `${fmtTime(cur)} / ${fmtTime(totalDur)}`;
+  }
+
+  function setPlayVisual(playing: boolean) {
+    if (iconPlay) iconPlay.hidden = playing;
+    if (iconPause) iconPause.hidden = !playing;
+    if (playLabel) playLabel.textContent = playing ? 'Pausar' : 'Escuchar';
+  }
+
+  function loadSelectedEmission(options?: { offset?: number; length?: number; autoPlay?: boolean; customProgram?: string }) {
+    const opt = getSelectedOption();
+    if (!opt || !previewAudio) return;
+    const audioUrl = opt.dataset.audio || '';
+    const declaredDur = Math.max(1, Number(opt.dataset.duration) || 60);
+    totalDur = declaredDur;
+
+    const desiredStart = options?.offset !== undefined ? Math.max(0, Math.min(options.offset, totalDur - 2)) : 0;
+    const desiredEnd = options?.length !== undefined
+      ? Math.max(desiredStart + 2, Math.min(totalDur, desiredStart + options.length))
+      : totalDur;
+    trimStart = desiredStart;
+    trimEnd = desiredEnd;
+    stopAtTrimEnd = false;
+
+    if (clipProg) {
+      clipProg.value = options?.customProgram || opt.dataset.program || '';
+    }
+    updateFilenamePreview();
+    renderTrimmer();
+
+    if (previewAudio.getAttribute('src') !== audioUrl) {
+      previewAudio.src = audioUrl;
+      previewAudio.load();
+    }
+    const seekAndPlay = () => {
+      try {
+        if (desiredStart > 0) previewAudio.currentTime = desiredStart;
+      } catch {}
+      renderTrimmer();
+      if (options?.autoPlay) void previewAudio.play().catch(() => {});
+    };
+    if (previewAudio.readyState >= 1) {
+      seekAndPlay();
     } else {
-      clipError.hidden = true;
+      previewAudio.addEventListener('loadedmetadata', seekAndPlay, { once: true });
+    }
+  }
+
+  if (emissionSelect && previewAudio) {
+    const initOpt = getSelectedOption();
+    totalDur = Math.max(1, Number(initOpt?.dataset.duration) || 60);
+    trimStart = 0;
+    trimEnd = totalDur;
+    renderTrimmer();
+    updateFilenamePreview();
+
+    emissionSelect.addEventListener('change', () => loadSelectedEmission());
+    clipProg?.addEventListener('input', updateFilenamePreview);
+
+    previewAudio.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(previewAudio.duration) && previewAudio.duration > 1) {
+        const wasFull = Math.abs(trimEnd - totalDur) < 2;
+        totalDur = previewAudio.duration;
+        if (wasFull || trimEnd > totalDur) trimEnd = totalDur;
+        if (trimStart >= trimEnd) trimStart = Math.max(0, trimEnd - 5);
+        renderTrimmer();
+      }
+    });
+    previewAudio.addEventListener('play', () => setPlayVisual(true));
+    previewAudio.addEventListener('pause', () => {
+      setPlayVisual(false);
+      stopAtTrimEnd = false;
+    });
+    previewAudio.addEventListener('timeupdate', () => {
+      if (stopAtTrimEnd && previewAudio.currentTime >= trimEnd) {
+        previewAudio.pause();
+        stopAtTrimEnd = false;
+      }
+      renderTrimmer();
+    });
+
+    playBtn?.addEventListener('click', () => {
+      stopAtTrimEnd = false;
+      if (previewAudio.paused) void previewAudio.play().catch(() => {});
+      else previewAudio.pause();
+    });
+    back10Btn?.addEventListener('click', () => {
+      previewAudio.currentTime = Math.max(0, previewAudio.currentTime - 10);
+      renderTrimmer();
+    });
+    fwd10Btn?.addEventListener('click', () => {
+      previewAudio.currentTime = Math.min(totalDur, previewAudio.currentTime + 10);
+      renderTrimmer();
+    });
+    previewSelBtn?.addEventListener('click', () => {
+      stopAtTrimEnd = true;
+      previewAudio.currentTime = trimStart;
+      void previewAudio.play().catch(() => {});
+      renderTrimmer();
+    });
+    markStartBtn?.addEventListener('click', () => {
+      const cur = previewAudio.currentTime || 0;
+      trimStart = Math.max(0, Math.min(cur, trimEnd - 2));
+      renderTrimmer();
+    });
+    markEndBtn?.addEventListener('click', () => {
+      const cur = previewAudio.currentTime || totalDur;
+      trimEnd = Math.min(totalDur, Math.max(cur, trimStart + 2));
+      renderTrimmer();
+    });
+    resetTrimBtn?.addEventListener('click', () => {
+      trimStart = 0;
+      trimEnd = totalDur;
+      renderTrimmer();
+    });
+
+    function secFromPointer(clientX: number) {
+      if (!trimTrack) return 0;
+      const rect = trimTrack.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+      return ratio * totalDur;
+    }
+
+    handleStart?.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      draggingHandle = 'start';
+      handleStart.setPointerCapture(e.pointerId);
+    });
+    handleEnd?.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      draggingHandle = 'end';
+      handleEnd.setPointerCapture(e.pointerId);
+    });
+    window.addEventListener('pointermove', e => {
+      if (!draggingHandle) return;
+      const sec = secFromPointer(e.clientX);
+      if (draggingHandle === 'start') {
+        trimStart = Math.max(0, Math.min(sec, trimEnd - 2));
+      } else {
+        trimEnd = Math.min(totalDur, Math.max(sec, trimStart + 2));
+      }
+      renderTrimmer();
+    });
+    window.addEventListener('pointerup', () => {
+      draggingHandle = null;
+    });
+    trimTrack?.addEventListener('click', e => {
+      if (draggingHandle || (e.target as Element).closest('.trim-handle')) return;
+      const sec = secFromPointer(e.clientX);
+      try {
+        previewAudio.currentTime = sec;
+      } catch {}
+      renderTrimmer();
+    });
+  }
+
+  // AJAX MP3 download with real error handling & progress state
+  clipForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const opt = getSelectedOption();
+    const endpoint = clipForm.dataset.clipEndpoint || '';
+    if (!opt || !endpoint) return;
+    const clipLen = Math.max(0, trimEnd - trimStart);
+    if (clipLen < 2) {
+      if (clipError) {
+        clipError.textContent = 'El recorte debe durar al menos 2 segundos.';
+        clipError.hidden = false;
+      }
+      return;
+    }
+    if (clipError) clipError.hidden = true;
+    if (downloadBtn) downloadBtn.disabled = true;
+    if (downloadLabel) downloadLabel.textContent = 'Generando MP3…';
+
+    try {
+      const params = new URLSearchParams({
+        action: 'clip',
+        date: opt.dataset.date || '',
+        grupo: opt.value,
+        offsetSec: trimStart.toFixed(2),
+        durationSec: clipLen.toFixed(2),
+        start: opt.dataset.start || '00:00',
+        program: clipProg?.value.trim() || opt.dataset.program || 'PROGRAMA',
+      });
+      const res = await fetch(`${endpoint}?${params.toString()}`);
+      if (!res.ok) {
+        const msg = (await res.text()).trim() || 'No se pudo generar el archivo MP3.';
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const dlUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = dlUrl;
+      link.download = (clipPreview?.textContent || 'recorte.mp3').replace(/:/g, '_');
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(dlUrl), 10_000);
+    } catch (err) {
+      if (clipError) {
+        clipError.textContent = err instanceof Error ? err.message : 'No se pudo descargar el recorte MP3.';
+        clipError.hidden = false;
+      }
+    } finally {
+      if (downloadBtn) downloadBtn.disabled = false;
+      if (downloadLabel) downloadLabel.textContent = 'Descargar MP3';
     }
   });
 
@@ -716,40 +1013,33 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
     });
   });
 
-  // Preview audio & 1-click fill into MP3 Clipper
+  // Load any emission or song into the interactive trimmer
   document.addEventListener('click', event => {
     const target = event.target as Element;
 
-    const previewBtn = target.closest<HTMLButtonElement>('[data-preview-audio]');
-    if (previewBtn && previewAudio && previewBox) {
-      const url = previewBtn.dataset.previewAudio || '';
-      const title = previewBtn.dataset.previewTitle || 'Vista previa';
-      previewBox.hidden = false;
-      if (previewLabel) previewLabel.textContent = title;
-      if (previewAudio.getAttribute('src') !== url) {
-        previewAudio.src = url;
-        previewAudio.load();
+    const previewBtn = target.closest<HTMLButtonElement>('[data-preview-group]');
+    if (previewBtn && emissionSelect) {
+      const groupId = previewBtn.dataset.previewGroup || '';
+      if (groupId) {
+        emissionSelect.value = groupId;
+        loadSelectedEmission({ autoPlay: true });
+        document.querySelector('#radio-clip-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-      void previewAudio.play().catch(() => {});
       return;
     }
 
     const fillBtn = target.closest<HTMLButtonElement>('[data-fill-clip]');
-    if (fillBtn) {
-      if (clipDate && fillBtn.dataset.clipDate) clipDate.value = fillBtn.dataset.clipDate;
-      if (clipStart && fillBtn.dataset.clipStart) clipStart.value = fillBtn.dataset.clipStart;
-      if (clipEnd && fillBtn.dataset.clipEnd) clipEnd.value = fillBtn.dataset.clipEnd;
-      if (clipProg && fillBtn.dataset.clipProg) clipProg.value = fillBtn.dataset.clipProg;
-      updateFilenamePreview();
-
-      if (fillBtn.dataset.clipAudio && previewAudio && previewBox) {
-        previewBox.hidden = false;
-        if (previewLabel) {
-          previewLabel.textContent = `${fillBtn.dataset.clipProg || 'Emisión'} · ${fillBtn.dataset.clipDate} · ${fillBtn.dataset.clipStart} – ${fillBtn.dataset.clipEnd} hrs`;
-        }
-        previewAudio.src = fillBtn.dataset.clipAudio;
-        previewAudio.load();
-      }
+    if (fillBtn && emissionSelect) {
+      const groupId = fillBtn.dataset.clipGroup || '';
+      if (groupId) emissionSelect.value = groupId;
+      const offset = fillBtn.dataset.clipOffset ? Number(fillBtn.dataset.clipOffset) : undefined;
+      const length = fillBtn.dataset.clipLength ? Number(fillBtn.dataset.clipLength) : undefined;
+      loadSelectedEmission({
+        offset,
+        length,
+        autoPlay: false,
+        customProgram: fillBtn.dataset.clipProg || undefined,
+      });
       document.querySelector('#radio-clip-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
@@ -821,22 +1111,116 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
   font-size: 13px;
 }
 
-/* Clipper Form */
+/* Clipper & Interactive Audio Trimmer */
 .clipper-body {
   display: grid;
   gap: 14px;
 }
-.clipper-grid {
+.clipper-top-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 12px;
 }
-.clipper-grid label {
+.clipper-top-grid label {
   display: flex;
   flex-direction: column;
   gap: 5px;
   font-size: 14px;
   font-weight: 600;
+  min-width: 0;
+}
+.trimmer-box {
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+}
+.trimmer-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.trim-clock {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--heading);
+  white-space: nowrap;
+}
+.trim-timeline-wrap {
+  padding: 10px 6px;
+}
+.trim-track {
+  position: relative;
+  height: 12px;
+  background: var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: none;
+}
+.trim-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--accent);
+  opacity: 0.35;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.trim-playhead {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--heading);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.trim-handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.trim-handle:hover {
+  background: var(--accent-hover);
+}
+.trim-markers-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+.trim-marker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.trim-marker-item strong,
+.trim-marker-summary strong {
+  color: var(--heading);
+}
+.trim-marker-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
 }
 .clip-error {
   margin: 10px 0 0;
@@ -852,9 +1236,9 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin-top: 14px;
+  margin-top: 12px;
   padding: 12px 14px;
-  background: var(--surface-soft);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   flex-wrap: wrap;
@@ -869,27 +1253,11 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
   font-size: 12px;
   color: var(--muted);
 }
-.clip-filename-box code {
-  font-size: 13px;
-  font-weight: 600;
+.clip-filename-box strong {
+  font-size: 14px;
+  font-weight: 650;
   color: var(--heading);
   overflow-wrap: anywhere;
-}
-.admin-audio-preview {
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-soft);
-  display: grid;
-  gap: 8px;
-}
-.admin-preview-head {
-  font-size: 13px;
-  color: var(--heading);
-}
-.admin-audio-preview audio {
-  width: 100%;
-  height: 36px;
 }
 
 /* Programs Form & Table */
@@ -1149,7 +1517,7 @@ const isPublished = settings?.published === 1 && channel.enabled === 1;
 }
 
 @media (max-width: 680px) {
-  .clipper-grid,
+  .clipper-top-grid,
   .program-form-grid {
     grid-template-columns: 1fr;
   }
