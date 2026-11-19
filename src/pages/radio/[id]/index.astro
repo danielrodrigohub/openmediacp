@@ -4,7 +4,7 @@ import '../../../styles/theme.css';
 import Brand from '../../../components/Brand.astro';
 import Icon from '../../../components/Icon.astro';
 import {
-  matchProgramForRecording,
+  groupRecordingsForDisplay,
   programsForChannel,
   publicRadio,
   radioDate,
@@ -32,13 +32,9 @@ const recordings = recordingsFor(channel.id);
 const days = radioDays();
 const requested = Astro.url.searchParams.get('fecha');
 const date = requested && days.includes(requested) ? requested : days[0];
-const selections = recordings
-  .filter(item => radioDate(item.start) === date)
-  .map(item => {
-    const prog = matchProgramForRecording(programs, item.start, item.end);
-    return { ...item, programName: prog?.name || '' };
-  });
-const songs = songsForDate(channel.id, date, selections, station.now_playing?.played_at);
+const dayRecordings = recordings.filter(item => radioDate(item.start) === date);
+const selections = groupRecordingsForDisplay(dayRecordings, programs);
+const songs = songsForDate(channel.id, date, dayRecordings, station.now_playing?.played_at);
 
 const capitalizeFirst = (value: string) => value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
 const dateFormat = new Intl.DateTimeFormat('es-CL', {
@@ -53,12 +49,14 @@ const timeRange = (start: number, end: number) => {
   const e = radioHour(end);
   return s === e ? `${s} – ${radioHour(start + 60_000)}` : `${s} – ${e}`;
 };
-const recordingDurationLabel = (start: number, end: number) => {
-  const totalSec = Math.max(1, Math.round((end - start) / 1000));
+const formatTotalDuration = (seconds: number) => {
+  const totalSec = Math.max(1, Math.round(seconds));
   if (totalSec < 60) return `${totalSec} s`;
-  const mins = Math.floor(totalSec / 60);
-  const secs = totalSec % 60;
-  return secs > 0 ? `${mins}:${secs.toString().padStart(2, '0')} min` : `${mins} min`;
+  const totalMins = Math.round(totalSec / 60);
+  if (totalMins < 60) return `${totalMins} min`;
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hrs} h ${mins} min` : `${hrs} h`;
 };
 const formatSongDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '—';
@@ -106,7 +104,7 @@ const isNewestDay = date === days[0];
         <div class="card-heading">
           <h2>Emisiones</h2>
           <span class="cuts-count" id="cuts-count-label">
-            {selections.length} {selections.length === 1 ? 'corte' : 'cortes'}
+            {selections.length} {selections.length === 1 ? 'emisión' : 'emisiones'}
           </span>
         </div>
 
@@ -158,25 +156,33 @@ const isNewestDay = date === days[0];
                     <button
                       type="button"
                       class="recording-row"
-                      data-radio-audio={radioPath + item.name}
-                      data-radio-name={item.name}
+                      data-radio-audio={radioPath + item.id}
+                      data-radio-name={item.id}
                       data-radio-start={item.start}
                       data-radio-end={item.end}
+                      data-radio-duration={Math.round(item.totalSeconds)}
                       data-radio-time={timeRange(item.start, item.end)}
                       data-radio-date={dateLabel(date)}
                       data-radio-program={item.programName}
+                      data-segments={JSON.stringify(item.segments.map(seg => ({
+                        name: seg.name,
+                        url: radioPath + seg.name,
+                        start: seg.start,
+                        end: seg.end,
+                        dur: Math.max(1, (seg.end - seg.start) / 1000),
+                      })))}
                       aria-pressed="false"
                     >
                       <span class="segment-meta">
                         {item.programName ? (
                           <>
                             <strong class="segment-program">{item.programName}</strong>
-                            <small class="segment-time">{timeRange(item.start, item.end)} hrs · {recordingDurationLabel(item.start, item.end)}</small>
+                            <small class="segment-time">{timeRange(item.start, item.end)} hrs · {formatTotalDuration(item.totalSeconds)}</small>
                           </>
                         ) : (
                           <>
                             <strong class="segment-time-primary">{timeRange(item.start, item.end)} hrs</strong>
-                            <small class="segment-duration">{recordingDurationLabel(item.start, item.end)}</small>
+                            <small class="segment-duration">{formatTotalDuration(item.totalSeconds)}</small>
                           </>
                         )}
                       </span>
@@ -424,12 +430,12 @@ const isNewestDay = date === days[0];
                     <td class="song-title-td">
                       <strong>{item.programName ? `${item.programName} · ${timeRange(item.start, item.end)} hrs` : `Tramo ${timeRange(item.start, item.end)} hrs`}</strong>
                     </td>
-                    <td class="song-duration-cell">{recordingDurationLabel(item.start, item.end)}</td>
+                    <td class="song-duration-cell">{formatTotalDuration(item.totalSeconds)}</td>
                     <td class="song-action-td">
                       <button
                         type="button"
                         class="button small song-seek-btn"
-                        data-chip={radioPath + item.name}
+                        data-chip={radioPath + item.id}
                       >
                         <Icon name="play" size={12}/>
                         <span>{timeRange(item.start, item.end)}</span>
@@ -503,9 +509,11 @@ const isNewestDay = date === days[0];
     const { initRadioWireless } = await import('../../../lib/radio-wireless');
     initRadioWireless({ audio, live, active: () => mode === 'live' ? live : audio, title: stationFallbackName, onEnd: () => switchToPresent(true) });
 
+    type SegmentInfo = { name: string; url: string; start: number; end: number; dur: number };
+
     let activeIndex = -1;
-    let activeStartMs = 0;
-    let activeEndMs = 0;
+    let activeSegments: SegmentInfo[] = [];
+    let activeSegIndex = 0;
     let activeName = '';
     let pendingSeek: number | null = null;
     let isScrubbing = false;
@@ -514,10 +522,25 @@ const isNewestDay = date === days[0];
     let liveTrackArt = artImg.getAttribute('src') || '';
     let shareResetTimer: number | null = null;
 
-    const clock = (seconds: number) =>
-      Number.isFinite(seconds) && seconds >= 0
-        ? `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
-        : '0:00';
+    const clock = (seconds: number) => {
+      if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+      const total = Math.floor(seconds);
+      const hrs = Math.floor(total / 3600);
+      const mins = Math.floor((total % 3600) / 60);
+      const secs = total % 60;
+      if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const formatDurationLabel = (seconds: number) => {
+      const totalSec = Math.max(1, Math.round(seconds));
+      if (totalSec < 60) return `${totalSec} s`;
+      const totalMins = Math.round(totalSec / 60);
+      if (totalMins < 60) return `${totalMins} min`;
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      return mins > 0 ? `${hrs} h ${mins} min` : `${hrs} h`;
+    };
 
     function setProgressValue(pct: number) {
       const clamped = Math.max(0, Math.min(100, pct));
@@ -530,18 +553,77 @@ const isNewestDay = date === days[0];
       statusBadge.dataset.mode = badgeMode;
     }
 
-    function getKnownDuration(index = activeIndex): number {
-      if (index === activeIndex && Number.isFinite(audio.duration) && audio.duration > 1) {
+    function getGroupSegments(index: number): SegmentInfo[] {
+      const btn = choices[index];
+      if (!btn) return [];
+      try {
+        const parsed = JSON.parse(btn.dataset.segments || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+      const start = Number(btn.dataset.radioStart) || 0;
+      const end = Number(btn.dataset.radioEnd) || 0;
+      return [{
+        name: btn.dataset.radioName || '',
+        url: btn.dataset.radioAudio || '',
+        start,
+        end,
+        dur: Math.max(1, (end - start) / 1000),
+      }];
+    }
+
+    function getSegmentDuration(segs: SegmentInfo[], segIdx: number, isActiveGroup: boolean): number {
+      if (isActiveGroup && segIdx === activeSegIndex && Number.isFinite(audio.duration) && audio.duration > 1) {
         return audio.duration;
       }
-      const btn = choices[index];
-      if (btn) {
-        const start = Number(btn.dataset.radioStart) || 0;
-        const end = Number(btn.dataset.radioEnd) || 0;
-        if (end > start) return (end - start) / 1000;
+      return Math.max(1, segs[segIdx]?.dur || 1);
+    }
+
+    function getKnownDuration(index = activeIndex): number {
+      const isActiveGroup = index === activeIndex;
+      const segs = isActiveGroup && activeSegments.length ? activeSegments : getGroupSegments(index);
+      if (!segs.length) return 0;
+      return segs.reduce((sum, _, i) => sum + getSegmentDuration(segs, i, isActiveGroup), 0);
+    }
+
+    function getSegmentOffsetStart(segs: SegmentInfo[], segIdx: number, isActiveGroup: boolean): number {
+      let total = 0;
+      for (let i = 0; i < segIdx && i < segs.length; i++) {
+        total += getSegmentDuration(segs, i, isActiveGroup);
       }
-      if (activeEndMs > activeStartMs) return (activeEndMs - activeStartMs) / 1000;
-      return 0;
+      return total;
+    }
+
+    function getGlobalCurrentTime(): number {
+      if (mode !== 'archive' || !activeSegments.length) return 0;
+      const base = getSegmentOffsetStart(activeSegments, activeSegIndex, true);
+      const local = pendingSeek !== null ? pendingSeek : (Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
+      return base + Math.max(0, local);
+    }
+
+    function resolveGlobalPosition(segs: SegmentInfo[], globalSec: number, isActiveGroup: boolean): { segIdx: number; localSec: number } {
+      let remaining = Math.max(0, globalSec);
+      for (let i = 0; i < segs.length; i++) {
+        const dur = getSegmentDuration(segs, i, isActiveGroup);
+        if (remaining < dur || i === segs.length - 1) {
+          return { segIdx: i, localSec: Math.max(0, Math.min(remaining, Math.max(0, dur - 0.5))) };
+        }
+        remaining -= dur;
+      }
+      return { segIdx: 0, localSec: 0 };
+    }
+
+    function findGroupForRecording(urlOrName: string): { groupIndex: number; segOffsetStart: number } | null {
+      for (let i = 0; i < choices.length; i++) {
+        const segs = getGroupSegments(i);
+        let offset = 0;
+        for (let j = 0; j < segs.length; j++) {
+          if (segs[j].url === urlOrName || segs[j].name === urlOrName) {
+            return { groupIndex: i, segOffsetStart: offset };
+          }
+          offset += Math.max(1, segs[j].dur || 1);
+        }
+      }
+      return null;
     }
 
     function setSubtitleText(text: string) {
@@ -615,7 +697,7 @@ const isNewestDay = date === days[0];
       }
       const cutsCountEl = document.querySelector<HTMLElement>('#cuts-count-label');
       if (cutsCountEl) {
-        cutsCountEl.textContent = `${visibleCuts} ${visibleCuts === 1 ? 'corte' : 'cortes'}`;
+        cutsCountEl.textContent = `${visibleCuts} ${visibleCuts === 1 ? 'emisión' : 'emisiones'}`;
       }
       const recEmpty = document.querySelector<HTMLElement>('#recordings-empty-search');
       if (recEmpty) recEmpty.hidden = !(choices.length > 0 && visibleCuts === 0);
@@ -638,6 +720,8 @@ const isNewestDay = date === days[0];
     function switchToPresent(autoPlay = true) {
       mode = 'live';
       activeIndex = -1;
+      activeSegments = [];
+      activeSegIndex = 0;
       activeName = '';
       pendingSeek = null;
       audio.pause();
@@ -666,21 +750,74 @@ const isNewestDay = date === days[0];
       }
     }
 
-    function applySeekToAudio(targetSec: number) {
-      const dur = getKnownDuration();
-      const clamped = dur > 0 ? Math.max(0, Math.min(targetSec, Math.max(0, dur - 0.5))) : Math.max(0, targetSec);
-      pendingSeek = clamped;
+    function loadActiveSegment(segIdx: number, localOffset: number, shouldPlay = true) {
+      const seg = activeSegments[segIdx];
+      if (!seg) return;
+      activeSegIndex = segIdx;
+      activeName = seg.name;
+      const segDur = Math.max(1, seg.dur);
+      const clampedLocal = Math.max(0, Math.min(localOffset, Math.max(0, segDur - 0.5)));
+      pendingSeek = clampedLocal;
+
+      const totalDur = getKnownDuration();
+      const globalPos = getSegmentOffsetStart(activeSegments, segIdx, true) + clampedLocal;
+      if (totalDur > 0) {
+        playTime.textContent = `${clock(globalPos)} / ${clock(totalDur)}`;
+        setProgressValue((globalPos / totalDur) * 100);
+      }
+
+      const currentBase = (audio.getAttribute('src') || '').split('#')[0];
+      if (currentBase === seg.url && audio.readyState >= 1) {
+        try {
+          audio.currentTime = clampedLocal;
+          if (Math.abs(audio.currentTime - clampedLocal) <= 2) pendingSeek = null;
+        } catch {}
+        if (shouldPlay) {
+          void audio.play().catch(() => {
+            if (audio.error) error.hidden = false;
+          });
+        }
+      } else {
+        const fragment = clampedLocal > 0 ? `#t=${Math.floor(clampedLocal)}` : '';
+        audio.src = seg.url + fragment;
+        audio.load();
+        const onReady = () => {
+          if (pendingSeek !== null) {
+            try { audio.currentTime = pendingSeek; } catch {}
+          }
+          if (shouldPlay) {
+            void audio.play().catch(() => {
+              if (audio.error) error.hidden = false;
+            });
+          }
+        };
+        audio.addEventListener('loadedmetadata', onReady, { once: true });
+      }
+    }
+
+    function applySeekToAudio(globalTargetSec: number) {
+      if (!activeSegments.length) return;
+      const totalDur = getKnownDuration();
+      const clampedGlobal = totalDur > 0
+        ? Math.max(0, Math.min(globalTargetSec, Math.max(0, totalDur - 0.5)))
+        : Math.max(0, globalTargetSec);
+      const { segIdx, localSec } = resolveGlobalPosition(activeSegments, clampedGlobal, true);
+      if (segIdx !== activeSegIndex) {
+        loadActiveSegment(segIdx, localSec, true);
+        return;
+      }
+      pendingSeek = localSec;
       try {
         if (audio.readyState >= 1) {
-          audio.currentTime = clamped;
-          if (Math.abs(audio.currentTime - clamped) <= 2) {
+          audio.currentTime = localSec;
+          if (Math.abs(audio.currentTime - localSec) <= 2) {
             pendingSeek = null;
           }
         }
       } catch {}
-      if (dur > 0) {
-        playTime.textContent = `${clock(clamped)} / ${clock(dur)}`;
-        setProgressValue((clamped / dur) * 100);
+      if (totalDur > 0) {
+        playTime.textContent = `${clock(clampedGlobal)} / ${clock(totalDur)}`;
+        setProgressValue((clampedGlobal / totalDur) * 100);
       }
     }
 
@@ -688,19 +825,18 @@ const isNewestDay = date === days[0];
       if (index < 0 || !choices[index]) return;
       const button = choices[index];
       const baseAudioUrl = button.dataset.radioAudio || '';
-      if (!baseAudioUrl) return;
+      const segs = getGroupSegments(index);
+      if (!baseAudioUrl || !segs.length) return;
 
       mode = 'archive';
       activeIndex = index;
-      activeName = button.dataset.radioName || '';
-      activeStartMs = Number(button.dataset.radioStart) || 0;
-      activeEndMs = Number(button.dataset.radioEnd) || 0;
+      activeSegments = segs;
 
-      const dur = getKnownDuration(index);
-      const targetOffset = dur > 0
-        ? Math.max(0, Math.min(seekOffsetSeconds, Math.max(0, dur - 1)))
+      const totalDur = getKnownDuration(index);
+      const targetGlobal = totalDur > 0
+        ? Math.max(0, Math.min(seekOffsetSeconds, Math.max(0, totalDur - 1)))
         : Math.max(0, seekOffsetSeconds);
-      pendingSeek = targetOffset;
+      const { segIdx, localSec } = resolveGlobalPosition(segs, targetGlobal, false);
 
       live.pause();
       error.hidden = true;
@@ -718,32 +854,9 @@ const isNewestDay = date === days[0];
 
       setArtwork(customArt || liveTrackArt);
       progress.disabled = false;
-      playTime.textContent = `${clock(targetOffset)} / ${clock(dur)}`;
-      setProgressValue(dur > 0 ? (targetOffset / dur) * 100 : 0);
       updatePressedStates(baseAudioUrl);
 
-      const currentBase = (audio.getAttribute('src') || '').split('#')[0];
-      const sameSrc = currentBase === baseAudioUrl;
-
-      if (sameSrc && audio.readyState >= 1) {
-        applySeekToAudio(targetOffset);
-        void audio.play().catch(() => {
-          if (audio.error) error.hidden = false;
-        });
-      } else {
-        const fragment = targetOffset > 0 ? `#t=${Math.floor(targetOffset)}` : '';
-        audio.src = baseAudioUrl + fragment;
-        audio.load();
-        const onReady = () => {
-          if (pendingSeek !== null) {
-            try { audio.currentTime = pendingSeek; } catch {}
-          }
-          void audio.play().catch(() => {
-            if (audio.error) error.hidden = false;
-          });
-        };
-        audio.addEventListener('loadedmetadata', onReady, { once: true });
-      }
+      loadActiveSegment(segIdx, localSec, true);
     }
 
     audio.addEventListener('canplay', () => {
@@ -783,7 +896,7 @@ const isNewestDay = date === days[0];
 
     skipBackBtn.addEventListener('click', () => {
       if (mode === 'archive') {
-        const currentPos = pendingSeek !== null ? pendingSeek : audio.currentTime;
+        const currentPos = getGlobalCurrentTime();
         if (currentPos >= 15) {
           applySeekToAudio(currentPos - 15);
           if (audio.paused) void audio.play().catch(() => {});
@@ -817,7 +930,7 @@ const isNewestDay = date === days[0];
     skipForwardBtn.addEventListener('click', () => {
       if (mode === 'archive') {
         const dur = getKnownDuration();
-        const currentPos = pendingSeek !== null ? pendingSeek : audio.currentTime;
+        const currentPos = getGlobalCurrentTime();
         if (dur > 0 && currentPos + 15 < dur - 1) {
           applySeekToAudio(currentPos + 15);
           if (audio.paused) void audio.play().catch(() => {});
@@ -969,13 +1082,15 @@ const isNewestDay = date === days[0];
     });
     audio.addEventListener('timeupdate', () => {
       if (mode !== 'archive' || isScrubbing) return;
-      const cur = pendingSeek !== null ? pendingSeek : audio.currentTime;
+      const cur = getGlobalCurrentTime();
       const dur = getKnownDuration();
       playTime.textContent = `${clock(cur)} / ${clock(dur)}`;
       if (dur > 0) setProgressValue((cur / dur) * 100);
     });
     audio.addEventListener('ended', () => {
-      if (activeIndex >= 0 && activeIndex + 1 < choices.length) {
+      if (activeSegments.length && activeSegIndex + 1 < activeSegments.length) {
+        loadActiveSegment(activeSegIndex + 1, 0, true);
+      } else if (activeIndex >= 0 && activeIndex + 1 < choices.length) {
         playArchive(activeIndex + 1, 0);
       } else {
         switchToPresent(true);
@@ -1033,9 +1148,9 @@ const isNewestDay = date === days[0];
         const offset = Number(seekBtn.dataset.seekOffset) || 0;
         const songTitle = seekBtn.dataset.seekTitle || '';
         const songArt = seekBtn.dataset.seekArt || '';
-        const index = choices.findIndex(choice => choice.dataset.radioAudio === audioTarget);
-        if (index >= 0) {
-          playArchive(index, offset, songTitle, songArt);
+        const match = findGroupForRecording(audioTarget);
+        if (match) {
+          playArchive(match.groupIndex, match.segOffsetStart + offset, songTitle, songArt);
         }
         return;
       }
@@ -1175,20 +1290,23 @@ const isNewestDay = date === days[0];
             }
           }
         }
-        if (Array.isArray(data.recordings) && data.recordings.length > 0 && choices.length > 0) {
-          const latestData = data.recordings[data.recordings.length - 1];
+        if (Array.isArray(data.groups) && data.groups.length > 0 && choices.length > 0) {
+          const latestGroup = data.groups[data.groups.length - 1];
           const latestChoice = choices[choices.length - 1];
-          if (latestChoice && Number(latestChoice.dataset.radioStart) === latestData.start) {
-            latestChoice.dataset.radioAudio = latestData.url;
-            latestChoice.dataset.radioName = latestData.name;
-            latestChoice.dataset.radioEnd = String(latestData.end);
-            latestChoice.dataset.radioTime = latestData.range;
+          if (latestChoice && Number(latestChoice.dataset.radioStart) === latestGroup.start) {
+            latestChoice.dataset.radioEnd = String(latestGroup.end);
+            latestChoice.dataset.radioDuration = String(latestGroup.totalSeconds);
+            latestChoice.dataset.radioTime = latestGroup.range;
+            latestChoice.dataset.segments = JSON.stringify(latestGroup.segments);
+            const durText = formatDurationLabel(latestGroup.totalSeconds);
             const timePrimary = latestChoice.querySelector('.segment-time-primary');
-            if (timePrimary) timePrimary.textContent = `${latestData.range} hrs`;
+            if (timePrimary) timePrimary.textContent = `${latestGroup.range} hrs`;
+            const durSmall = latestChoice.querySelector('.segment-duration');
+            if (durSmall) durSmall.textContent = durText;
             const timeSmall = latestChoice.querySelector('.segment-time');
-            if (timeSmall) timeSmall.textContent = `${latestData.range} hrs`;
+            if (timeSmall) timeSmall.textContent = `${latestGroup.range} hrs · ${durText}`;
             if (mode === 'archive' && activeIndex === choices.length - 1) {
-              activeEndMs = latestData.end;
+              activeSegments = latestGroup.segments;
             }
           }
         }
@@ -1202,9 +1320,9 @@ const isNewestDay = date === days[0];
     const requestedCut = initialParams.get('corte');
     const requestedOffset = Number(initialParams.get('t')) || 0;
     if (requestedCut) {
-      const idx = choices.findIndex(c => c.dataset.radioName === requestedCut);
-      if (idx >= 0) {
-        playArchive(idx, requestedOffset);
+      const match = findGroupForRecording(requestedCut);
+      if (match) {
+        playArchive(match.groupIndex, match.segOffsetStart + requestedOffset);
       } else {
         switchToPresent(false);
       }

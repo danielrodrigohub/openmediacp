@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import {
+  groupRecordingsForDisplay,
   matchProgramForRecording,
   programsForChannel,
   publicRadio,
@@ -32,6 +33,7 @@ export const GET: APIRoute = async ({ params, url }) => {
   const requested = url.searchParams.get('fecha');
   const date = requested && days.includes(requested) ? requested : days[0];
   const selections = recordings.filter(item => radioDate(item.start) === date);
+  const grouped = groupRecordingsForDisplay(selections, programs);
   const songs = songsForDate(channel.id, date, selections, station.now_playing?.played_at);
   const radioPath = `/radio/${channel.id}/`;
   const timeRange = (start: number, end: number) => {
@@ -69,6 +71,21 @@ export const GET: APIRoute = async ({ params, url }) => {
           programName: matchedProg?.name || 'Grabación',
         };
       }),
+      groups: grouped.map(group => ({
+        id: group.id,
+        start: group.start,
+        end: group.end,
+        totalSeconds: Math.round(group.totalSeconds),
+        range: timeRange(group.start, group.end),
+        programName: group.programName,
+        segments: group.segments.map(seg => ({
+          name: seg.name,
+          url: radioPath + seg.name,
+          start: seg.start,
+          end: seg.end,
+          dur: Math.max(1, (seg.end - seg.start) / 1000),
+        })),
+      })),
       songs: songs.map(song => ({
         playedAt: song.played_at,
         time: radioHour(song.played_at * 1000),

@@ -548,6 +548,64 @@ export function matchProgramForRecording(programs: RadioProgram[], startMs: numb
   return matchProgramAt(programs, midMs) || matchProgramAt(programs, startMs + 60_000);
 }
 
+export type GroupedRecording = {
+  id: string;
+  start: number;
+  end: number;
+  totalSeconds: number;
+  programId: string;
+  programName: string;
+  segments: Recording[];
+};
+
+export function groupRecordingsForDisplay(recordings: Recording[], programs: RadioProgram[]): GroupedRecording[] {
+  if (!recordings.length) return [];
+  const sorted = [...recordings].sort((a, b) => a.start - b.start);
+  const groups: GroupedRecording[] = [];
+
+  for (const rec of sorted) {
+    const prog = matchProgramForRecording(programs, rec.start, rec.end);
+    const progId = prog?.id || '';
+    const progName = prog?.name || '';
+    const segDur = Math.max(1, (rec.end - rec.start) / 1000);
+    const prev = groups[groups.length - 1];
+
+    let canMerge = false;
+    if (prev) {
+      if (progId && prev.programId === progId) {
+        // Merge consecutive segments of the same program (allow reconnect gaps up to 45 min)
+        canMerge = rec.start - prev.end <= 45 * 60_000;
+      } else if (!progId && !prev.programId) {
+        // Merge unlabelled stream-reconnect fragments within the same clock hour
+        const prevHour = chileClock(prev.start);
+        const curHour = chileClock(rec.start);
+        canMerge = prevHour.year === curHour.year
+          && prevHour.month === curHour.month
+          && prevHour.day === curHour.day
+          && prevHour.hour === curHour.hour;
+      }
+    }
+
+    if (canMerge && prev) {
+      prev.end = Math.max(prev.end, rec.end);
+      prev.totalSeconds += segDur;
+      prev.segments.push(rec);
+    } else {
+      groups.push({
+        id: rec.name,
+        start: rec.start,
+        end: rec.end,
+        totalSeconds: segDur,
+        programId: progId,
+        programName: progName,
+        segments: [rec],
+      });
+    }
+  }
+
+  return groups;
+}
+
 export function isMetadataStuck(nowPlaying?: StationSongNow | null): boolean {
   if (!nowPlaying) return true;
   const nowSec = Math.floor(Date.now() / 1000);
