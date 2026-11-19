@@ -1769,11 +1769,11 @@ const isNewestDay = date === days[0];
   table-layout: fixed;
   border-collapse: collapse;
 }
-.songs-panel .col-time { width: 108px; }
+.songs-panel .col-time { width: 96px; }
 .songs-panel .col-title { width: auto; }
-.songs-panel .col-artist { width: 25%; }
-.songs-panel .col-duration { width: 78px; }
-.songs-panel .col-action { width: 146px; }
+.songs-panel .col-artist { width: 22%; }
+.songs-panel .col-duration { width: 72px; }
+.songs-panel .col-action { width: 162px; }
 
 .songs-panel :global(th) {
   position: sticky;
@@ -1853,9 +1853,13 @@ const isNewestDay = date === days[0];
 }
 .songs-panel :global(.song-seek-btn) {
   font-size: 12px;
-  padding: 4px 9px;
+  padding: 4px 8px;
   min-height: 30px;
-  gap: 6px;
+  gap: 5px;
+  max-width: 100%;
+}
+.songs-panel :global(.song-seek-btn .mono) {
+  font-size: 12px;
 }
 .songs-panel :global(.no-archive-tag) {
   font-size: 13px;
@@ -2001,8 +2005,12 @@ const isNewestDay = date === days[0];
   .songs-panel :global(table) {
     min-width: 0;
   }
-  .songs-panel .col-time { width: 72px; }
-  .songs-panel .col-action { width: 124px; }
+  .songs-panel .col-time { width: 64px; }
+  .songs-panel .col-action { width: 148px; }
+  .songs-panel :global(th),
+  .songs-panel :global(td) {
+    padding: 10px 8px;
+  }
   .songs-panel .col-artist,
   .songs-panel :global(.song-artist-td),
   .songs-panel :global(th:nth-child(3)),
