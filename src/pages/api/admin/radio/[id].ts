@@ -25,6 +25,7 @@ import {
   syncStationApi,
   validateHttpUrl,
 } from '../../../../server/radio';
+import { resolveMergedGroupAudio } from '../../../../server/radio-merge';
 
 const runFile = promisify(execFile);
 const exists = (id: string) => channelPattern.test(id) && !!db.prepare('SELECT 1 FROM channels WHERE id=?').get(id);
@@ -36,17 +37,29 @@ export const GET: APIRoute = async ({ params, url, locals, redirect, request }) 
 
   const action = url.searchParams.get('action');
 
-  // Admin audio preview for any recorded segment (works even if public page is unpublished)
-  if (action === 'audio') {
-    const recName = url.searchParams.get('recording') || '';
-    const recording = recordingInfo(recName);
-    const filePath = recording ? resolveRecordingPath(id, recording.name) : null;
-    if (!recording || !filePath) return new Response('Grabación no encontrada.', { status: 404 });
+  // Admin audio preview for any recorded segment or merged emission (works even if unpublished)
+  if (action === 'audio' || action === 'merged') {
+    let filePath: string | null = null;
+    let durationSec = '1.00';
+    if (action === 'merged') {
+      const fecha = url.searchParams.get('fecha') || '';
+      const grupo = url.searchParams.get('grupo') || '';
+      const resolved = await resolveMergedGroupAudio(id, fecha, grupo);
+      if (resolved) {
+        filePath = resolved.filePath;
+        durationSec = resolved.durationSec.toFixed(2);
+      }
+    } else {
+      const recName = url.searchParams.get('recording') || '';
+      const recording = recordingInfo(recName);
+      filePath = recording ? resolveRecordingPath(id, recording.name) : null;
+      if (recording) durationSec = Math.max(1, (recording.end - recording.start) / 1000).toFixed(2);
+    }
+    if (!filePath) return new Response('Grabación no encontrada.', { status: 404 });
     let file;
     try {
       file = await open(filePath, 'r');
       const { size } = await file.stat();
-      const durationSec = Math.max(1, (recording.end - recording.start) / 1000).toFixed(2);
       const headers = new Headers({
         'Accept-Ranges': 'bytes',
         'Content-Type': 'audio/ogg',
