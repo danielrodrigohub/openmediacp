@@ -3,7 +3,15 @@ import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { publicRadio, radioDate, radioDays, recordingInfo, resolveRecordingPath } from '../../../server/radio';
 
-const noIndex = { 'X-Robots-Tag': 'noindex, nofollow, noarchive' };
+const noIndex = {
+  'X-Robots-Tag': 'noindex, nofollow, noarchive',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': 'Range, Content-Type',
+  'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+};
+
+export const OPTIONS: APIRoute = async () => new Response(null, { status: 204, headers: noIndex });
 
 const serve: APIRoute = async ({ params, request }) => {
   const channel = publicRadio(params.id);

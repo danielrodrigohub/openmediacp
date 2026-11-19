@@ -10,6 +10,7 @@ import {
   radioDate,
   radioDays,
   radioRoot,
+  recordingInfo,
   recordingsFor,
   resolveRecordingPath,
 } from './radio';
@@ -21,9 +22,14 @@ function escapeConcatPath(filePath: string): string {
   return `'${filePath.replace(/'/g, `'\\''`)}'`;
 }
 
-async function buildMergedOgg(channelId: string, cacheKey: string, segmentPaths: string[]): Promise<string> {
+async function buildMergedAudio(
+  channelId: string,
+  cacheKey: string,
+  segmentPaths: string[],
+  format: 'ogg' | 'mp3'
+): Promise<string> {
   const mergedDir = join(radioRoot, '.merged', channelId);
-  const targetPath = join(mergedDir, `${cacheKey}.ogg`);
+  const targetPath = join(mergedDir, `${cacheKey}.${format}`);
   if (existsSync(targetPath)) return targetPath;
 
   const existingJob = inFlight.get(targetPath);
@@ -33,32 +39,69 @@ async function buildMergedOgg(channelId: string, cacheKey: string, segmentPaths:
     await mkdir(mergedDir, { recursive: true, mode: 0o700 });
     const token = randomBytes(6).toString('hex');
     const listPath = join(mergedDir, `list-${token}.txt`);
-    const tempOut = join(mergedDir, `tmp-${token}.ogg`);
+    const tempOut = join(mergedDir, `tmp-${token}.${format}`);
     try {
-      const listBody = segmentPaths.map(p => `file ${escapeConcatPath(p)}`).join('\n') + '\n';
-      await writeFile(listPath, listBody, 'utf8');
-
-      try {
-        await runFile('ffmpeg', [
-          '-hide_banner', '-nostdin', '-loglevel', 'error',
-          '-f', 'concat', '-safe', '0', '-i', listPath,
-          '-vn', '-sn', '-dn', '-c:a', 'copy',
-          '-y', tempOut,
-        ], { timeout: 60_000 });
-      } catch {
-        const args = ['-hide_banner', '-nostdin', '-loglevel', 'error'];
-        const inputs: string[] = [];
-        segmentPaths.forEach((p, idx) => {
-          args.push('-i', p);
-          inputs.push(`[${idx}:a:0]`);
-        });
-        args.push(
-          '-filter_complex', `${inputs.join('')}concat=n=${segmentPaths.length}:v=0:a=1[outa]`,
-          '-map', '[outa]',
-          '-vn', '-c:a', 'libopus', '-b:a', '82k', '-vbr', 'off', '-ar', '48000', '-ac', '2',
-          '-y', tempOut,
-        );
-        await runFile('ffmpeg', args, { timeout: 120_000 });
+      if (format === 'mp3') {
+        if (segmentPaths.length === 1) {
+          await runFile('ffmpeg', [
+            '-hide_banner', '-nostdin', '-loglevel', 'error',
+            '-i', segmentPaths[0],
+            '-vn', '-sn', '-dn',
+            '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-y', tempOut,
+          ], { timeout: 120_000 });
+        } else {
+          const listBody = segmentPaths.map(p => `file ${escapeConcatPath(p)}`).join('\n') + '\n';
+          await writeFile(listPath, listBody, 'utf8');
+          try {
+            await runFile('ffmpeg', [
+              '-hide_banner', '-nostdin', '-loglevel', 'error',
+              '-f', 'concat', '-safe', '0', '-i', listPath,
+              '-vn', '-sn', '-dn',
+              '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+              '-y', tempOut,
+            ], { timeout: 120_000 });
+          } catch {
+            const args = ['-hide_banner', '-nostdin', '-loglevel', 'error'];
+            const inputs: string[] = [];
+            segmentPaths.forEach((p, idx) => {
+              args.push('-i', p);
+              inputs.push(`[${idx}:a:0]`);
+            });
+            args.push(
+              '-filter_complex', `${inputs.join('')}concat=n=${segmentPaths.length}:v=0:a=1[outa]`,
+              '-map', '[outa]',
+              '-vn', '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+              '-y', tempOut,
+            );
+            await runFile('ffmpeg', args, { timeout: 180_000 });
+          }
+        }
+      } else {
+        const listBody = segmentPaths.map(p => `file ${escapeConcatPath(p)}`).join('\n') + '\n';
+        await writeFile(listPath, listBody, 'utf8');
+        try {
+          await runFile('ffmpeg', [
+            '-hide_banner', '-nostdin', '-loglevel', 'error',
+            '-f', 'concat', '-safe', '0', '-i', listPath,
+            '-vn', '-sn', '-dn', '-c:a', 'copy',
+            '-y', tempOut,
+          ], { timeout: 60_000 });
+        } catch {
+          const args = ['-hide_banner', '-nostdin', '-loglevel', 'error'];
+          const inputs: string[] = [];
+          segmentPaths.forEach((p, idx) => {
+            args.push('-i', p);
+            inputs.push(`[${idx}:a:0]`);
+          });
+          args.push(
+            '-filter_complex', `${inputs.join('')}concat=n=${segmentPaths.length}:v=0:a=1[outa]`,
+            '-map', '[outa]',
+            '-vn', '-c:a', 'libopus', '-b:a', '82k', '-vbr', 'off', '-ar', '48000', '-ac', '2',
+            '-y', tempOut,
+          );
+          await runFile('ffmpeg', args, { timeout: 120_000 });
+        }
       }
 
       await rename(tempOut, targetPath);
@@ -82,7 +125,8 @@ async function buildMergedOgg(channelId: string, cacheKey: string, segmentPaths:
 export async function resolveMergedGroupAudio(
   channelId: string,
   fecha: string,
-  grupo: string
+  grupo: string,
+  format: 'ogg' | 'mp3' = 'ogg'
 ): Promise<{ filePath: string; durationSec: number } | null> {
   if (!fecha || !grupo || !radioDays().includes(fecha)) return null;
 
@@ -102,16 +146,37 @@ export async function resolveMergedGroupAudio(
   }
   if (!resolved.length) return null;
 
-  let filePath = resolved[0].path;
-  if (resolved.length > 1) {
-    const sig = resolved.map(r => `${r.name}:${r.size}:${r.mtimeMs}`).join('|');
-    const cacheKey = createHash('sha256').update(`${channelId}|${group.id}|${sig}`).digest('hex').slice(0, 24);
-    try {
-      filePath = await buildMergedOgg(channelId, cacheKey, resolved.map(r => r.path));
-    } catch {
-      filePath = resolved[0].path;
-    }
+  if (format === 'ogg' && resolved.length === 1) {
+    return { filePath: resolved[0].path, durationSec: Math.max(1, group.totalSeconds) };
   }
 
-  return { filePath, durationSec: Math.max(1, group.totalSeconds) };
+  const sig = resolved.map(r => `${r.name}:${r.size}:${r.mtimeMs}`).join('|');
+  const cacheKey = createHash('sha256').update(`${channelId}|${group.id}|${format}|${sig}`).digest('hex').slice(0, 24);
+  try {
+    const filePath = await buildMergedAudio(channelId, cacheKey, resolved.map(r => r.path), format);
+    return { filePath, durationSec: Math.max(1, group.totalSeconds) };
+  } catch {
+    if (format === 'ogg') return { filePath: resolved[0].path, durationSec: Math.max(1, group.totalSeconds) };
+    return null;
+  }
+}
+
+export async function resolveSingleRecordingMp3(
+  channelId: string,
+  recordingName: string
+): Promise<{ filePath: string; durationSec: number } | null> {
+  const rec = recordingInfo(recordingName);
+  if (!rec || !radioDays().includes(radioDate(rec.start))) return null;
+  const srcPath = resolveRecordingPath(channelId, rec.name);
+  if (!srcPath) return null;
+  const st = statSync(srcPath, { throwIfNoEntry: false });
+  if (!st || st.size < 512) return null;
+  const sig = `${rec.name}:${st.size}:${Math.floor(st.mtimeMs)}`;
+  const cacheKey = createHash('sha256').update(`${channelId}|single|mp3|${sig}`).digest('hex').slice(0, 24);
+  try {
+    const filePath = await buildMergedAudio(channelId, cacheKey, [srcPath], 'mp3');
+    return { filePath, durationSec: Math.max(1, (rec.end - rec.start) / 1000) };
+  } catch {
+    return null;
+  }
 }

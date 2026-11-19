@@ -1,0 +1,85 @@
+import type { APIRoute } from 'astro';
+import { open } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { publicRadio } from '../../../server/radio';
+import { resolveMergedGroupAudio, resolveSingleRecordingMp3 } from '../../../server/radio-merge';
+
+const corsHeaders = {
+  'X-Robots-Tag': 'noindex, nofollow, noarchive',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': 'Range, Content-Type',
+  'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+};
+
+export const OPTIONS: APIRoute = async () => new Response(null, { status: 204, headers: corsHeaders });
+
+const serve: APIRoute = async ({ params, request, url }) => {
+  const channel = publicRadio(params.id);
+  if (!channel) return new Response(null, { status: 404, headers: corsHeaders });
+
+  const fecha = url.searchParams.get('fecha') || '';
+  const grupo = url.searchParams.get('grupo') || '';
+  const recording = url.searchParams.get('recording') || '';
+
+  const resolved = fecha && grupo
+    ? await resolveMergedGroupAudio(channel.id, fecha, grupo, 'mp3')
+    : recording
+      ? await resolveSingleRecordingMp3(channel.id, recording)
+      : null;
+
+  if (!resolved) return new Response(null, { status: 404, headers: corsHeaders });
+
+  let file;
+  try {
+    file = await open(resolved.filePath, 'r');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Response(null, { status: 404, headers: corsHeaders });
+    throw error;
+  }
+
+  try {
+    const { size } = await file.stat();
+    const durationSec = resolved.durationSec.toFixed(2);
+    const headers = new Headers({
+      ...corsHeaders,
+      'Accept-Ranges': 'bytes',
+      'Content-Type': 'audio/mpeg',
+      'X-Content-Duration': durationSec,
+      'Content-Duration': durationSec,
+    });
+    let start = 0;
+    let end = size - 1;
+    const range = request.headers.get('range');
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match && (match[1] || match[2])) {
+        if (match[1]) {
+          start = Number(match[1]);
+          if (match[2]) end = Math.min(end, Number(match[2]));
+        } else {
+          start = Math.max(0, size - Number(match[2]));
+        }
+      }
+      if (!match || (!match[1] && !match[2]) || start > end || !Number.isSafeInteger(start)) {
+        await file.close();
+        headers.set('Content-Range', `bytes */${size}`);
+        return new Response(null, { status: 416, headers });
+      }
+      headers.set('Content-Range', `bytes ${start}-${end}/${size}`);
+    }
+    headers.set('Content-Length', String(end - start + 1));
+    if (request.method === 'HEAD' || size === 0) {
+      await file.close();
+      return new Response(null, { status: range ? 206 : 200, headers });
+    }
+    const stream = file.createReadStream({ start, end });
+    return new Response(Readable.toWeb(stream) as ReadableStream, { status: range ? 206 : 200, headers });
+  } catch (error) {
+    await file.close();
+    throw error;
+  }
+};
+
+export const GET = serve;
+export const HEAD = serve;

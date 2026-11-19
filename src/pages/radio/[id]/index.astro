@@ -69,6 +69,8 @@ const groupAudioUrl = (item: typeof selections[number]) =>
   item.segments.length > 1
     ? `${radioPath}emision.ogg?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`
     : radioPath + item.segments[0].name;
+const groupCastUrl = (item: typeof selections[number]) =>
+  `${radioPath}emision.mp3?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`;
 const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
 ---
@@ -139,6 +141,7 @@ const nowPlayingArt = station.now_playing?.art || '';
                       type="button"
                       class="recording-row"
                       data-radio-audio={groupAudioUrl(item)}
+                      data-radio-cast-audio={groupCastUrl(item)}
                       data-radio-name={item.id}
                       data-radio-start={item.start}
                       data-radio-end={item.end}
@@ -497,7 +500,27 @@ const nowPlayingArt = station.now_playing?.art || '';
     let choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
     let mode: 'live' | 'archive' = 'live';
     const { initRadioWireless } = await import('../../../lib/radio-wireless');
-    initRadioWireless({ audio, live, active: () => mode === 'live' ? live : audio, title: stationFallbackName, onEnd: () => switchToPresent(true) });
+    const wireless = initRadioWireless({
+      audio,
+      live,
+      active: () => mode === 'live' ? live : audio,
+      title: stationFallbackName,
+      getDetails: () => {
+        const isLive = mode === 'live';
+        const btn = activeIndex >= 0 ? choices[activeIndex] : null;
+        const art = (!artImg.hidden && artImg.getAttribute('src')) ? artImg.getAttribute('src')! : liveTrackArt;
+        return {
+          title: (selection.textContent || '').trim() || stationFallbackName,
+          artist: stationFallbackName,
+          subtitle: isLive ? 'En directo' : `${btn?.dataset.radioDate || 'Grabación'} · ${btn?.dataset.radioTime || ''} hrs`.trim(),
+          artwork: art || undefined,
+          castUrl: isLive ? liveStreamUrl : (btn?.dataset.radioCastAudio || btn?.dataset.radioAudio || ''),
+          isLive,
+          startTime: isLive ? 0 : (pendingSeek !== null ? pendingSeek : (Number.isFinite(audio.currentTime) ? audio.currentTime : 0)),
+        };
+      },
+      onEnd: () => switchToPresent(true),
+    });
 
     type SegmentInfo = { name: string; url: string; start: number; end: number; dur: number };
 
@@ -704,6 +727,12 @@ const nowPlayingArt = station.now_playing?.art || '';
       updatePressedStates(null);
 
       if (autoPlay && liveStreamUrl) {
+        if (wireless.isConnected()) {
+          live.pause();
+          audio.pause();
+          wireless.syncActive(true);
+          return;
+        }
         setBadgeState('Conectando…', 'live');
         if (live.getAttribute('src') !== liveStreamUrl) {
           live.src = liveStreamUrl;
@@ -771,6 +800,13 @@ const nowPlayingArt = station.now_playing?.art || '';
       playTime.textContent = `${clock(targetOffset)} / ${clock(dur)}`;
       setProgressValue(dur > 0 ? (targetOffset / dur) * 100 : 0);
       updatePressedStates(baseAudioUrl);
+
+      if (wireless.isConnected()) {
+        audio.pause();
+        live.pause();
+        wireless.syncActive(true);
+        return;
+      }
 
       const currentBase = (audio.getAttribute('src') || '').split('#')[0];
       if (currentBase === baseAudioUrl && audio.readyState >= 1) {
