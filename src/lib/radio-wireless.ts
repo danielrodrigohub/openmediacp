@@ -44,9 +44,8 @@ export function initRadioWireless(options: {
   let remote: any;
   let controller: any;
   let loadedUrl = '';
-  let loading = false;
+  let loadSeq = 0;
   let requestingSession = false;
-  let pendingPlayer: HTMLAudioElement | null = null;
   let endedMedia: unknown = null;
   const connected = () => Boolean(context?.getCurrentSession());
 
@@ -69,6 +68,7 @@ export function initRadioWireless(options: {
     let type = 'audio/mpeg';
     if (/\.m3u8(?:\?|$)/i.test(url.href)) type = 'application/x-mpegURL';
     else if (/\.aac(?:\?|$)/i.test(url.href)) type = 'audio/aac';
+    else if (/\.webm(?:\?|$)/i.test(url.href)) type = 'audio/webm';
     else if (/\.ogg(?:\?|$)/i.test(url.href)) type = 'audio/ogg';
     else type = 'audio/mpeg';
     return { url: url.href, type, isLive };
@@ -77,7 +77,6 @@ export function initRadioWireless(options: {
   async function load(player: HTMLAudioElement, forceReload = false) {
     const session = context?.getCurrentSession();
     if (!session) return;
-    if (loading) { pendingPlayer = player; return; }
 
     const details = options.getDetails?.();
     const resolved = resolveCastUrlAndType(player, details);
@@ -91,6 +90,7 @@ export function initRadioWireless(options: {
       return;
     }
 
+    const mySeq = ++loadSeq;
     const api = win.chrome.cast.media;
     const media = new api.MediaInfo(resolved.url, resolved.type);
     media.streamType = resolved.isLive ? api.StreamType.LIVE : api.StreamType.BUFFERED;
@@ -117,10 +117,14 @@ export function initRadioWireless(options: {
       if (startPos > 0) request.currentTime = startPos;
     }
 
-    loading = true;
+    players.forEach(item => item.pause());
     status.textContent = 'Enviando audio a Google Cast…';
     try {
-      await session.loadMedia(request);
+      await Promise.race([
+        session.loadMedia(request),
+        new Promise((_, reject) => setTimeout(() => reject({ code: 'timeout' }), 15_000)),
+      ]);
+      if (mySeq !== loadSeq) return;
       loadedUrl = resolved.url;
       endedMedia = null;
       players.forEach(item => item.pause());
@@ -129,35 +133,30 @@ export function initRadioWireless(options: {
       const badgeText = document.querySelector<HTMLElement>('#play-state-text');
       if (badgeText) badgeText.textContent = `Cast · ${deviceName}`;
     } catch (err) {
+      if (mySeq !== loadSeq) return;
+      loadedUrl = '';
       const code = typeof err === 'string' ? err : (err as { code?: string })?.code || '';
-      status.textContent = `No se pudo enviar el audio al receptor${code ? ` (${code})` : ''}. Comprueba que el servidor sea accesible desde la red del Chromecast.`;
-    } finally {
-      loading = false;
-      const next = pendingPlayer;
-      pendingPlayer = null;
-      if (next) void load(next);
+      status.textContent = `No se pudo enviar el audio al receptor${code ? ` (${code})` : ''}.`;
     }
   }
 
   for (const player of players) {
     player.addEventListener('play', () => {
       if (!connected()) return;
-      if (loading) { pendingPlayer = player; return; }
       const details = options.getDetails?.();
       const resolved = resolveCastUrlAndType(player, details);
       if (!resolved) return;
-      if (resolved.url !== loadedUrl) void load(player);
-      else {
-        player.pause();
-        if (remote?.isPaused) controller.playOrPause();
-      }
+      player.pause();
+      if (resolved.url !== loadedUrl || !remote?.isMediaLoaded) void load(player, true);
+      else if (remote?.isPaused) controller.playOrPause();
     });
   }
 
   document.querySelector('#toggle-play')?.addEventListener('click', event => {
-    if (!connected() || !remote?.isMediaLoaded) return;
+    if (!connected()) return;
     event.stopImmediatePropagation();
-    controller.playOrPause();
+    if (remote?.isMediaLoaded) controller.playOrPause();
+    else void load(options.active(), true);
   }, true);
 
   document.querySelector<HTMLInputElement>('#play-volume')?.addEventListener('input', event => {
@@ -288,6 +287,7 @@ export function initRadioWireless(options: {
       castButton.setAttribute('aria-pressed', String(isConn));
 
       if (!isConn) {
+        loadSeq++;
         loadedUrl = '';
         status.textContent = '';
         const badgeText = document.querySelector<HTMLElement>('#play-state-text');

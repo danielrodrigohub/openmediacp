@@ -70,7 +70,7 @@ const groupAudioUrl = (item: typeof selections[number]) =>
     ? `${radioPath}emision.ogg?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`
     : radioPath + item.segments[0].name;
 const groupCastUrl = (item: typeof selections[number]) =>
-  `${radioPath}emision.mp3?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`;
+  `${radioPath}emision.webm?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`;
 const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
 ---
