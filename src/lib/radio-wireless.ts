@@ -6,8 +6,8 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
   const airplay = document.querySelector<HTMLButtonElement>('#radio-airplay')!;
   const castButton = document.querySelector<HTMLButtonElement>('#radio-cast')!;
   const status = document.createElement('p');
+  status.className = 'wireless-status';
   status.setAttribute('role', 'status');
-  status.style.fontSize = '13px';
   castButton.closest('.custom-controls')!.after(status);
   const players = [options.audio, options.live];
   for (const player of players) {
@@ -126,16 +126,17 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
     launcher.id = 'radio-cast-launcher';
     launcher.setAttribute('aria-label', 'Enviar audio con Google Cast');
     launcher.setAttribute('title', 'Enviar audio con Google Cast');
-    launcher.style.cssText = 'display:block;width:44px;height:44px;padding:8px;--connected-color:#ffffff;--disconnected-color:#ffffff;';
+    launcher.style.cssText = 'display:grid;place-items:center;width:38px;height:38px;padding:8px;border-radius:4px;cursor:pointer;flex-shrink:0;--connected-color:#93c5fd;--disconnected-color:#ffffff;';
     castButton.before(launcher);
     castButton.hidden = true;
     const updateAvailability = () => {
       const unavailable = context.getCastState() === framework.CastState.NO_DEVICES_AVAILABLE;
-      castButton.title = unavailable ? 'Google Cast: no se detectan dispositivos en la red' : 'Enviar a Google Cast';
-      castButton.setAttribute('aria-label', castButton.title);
-      launcher.setAttribute('title', castButton.title);
-      if (unavailable && !connected()) status.textContent = 'No se detectan receptores Google Cast en esta red. Enciende el receptor y comprueba el permiso de red local de Chrome.';
-      else if (!connected() && !requestingSession) status.textContent = '';
+      const label = unavailable ? 'Google Cast: sin receptores detectados en la red' : 'Enviar a Google Cast';
+      castButton.title = label;
+      castButton.setAttribute('aria-label', label);
+      launcher.setAttribute('title', label);
+      launcher.style.opacity = unavailable && !connected() ? '0.55' : '1';
+      if (!connected() && !requestingSession) status.textContent = '';
     };
     context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, updateAvailability);
     updateAvailability();
@@ -155,9 +156,11 @@ export function initRadioWireless(options: { audio: HTMLAudioElement; live: HTML
       toggle.querySelector<HTMLElement>('.icon-pause')!.hidden = remote.isPaused;
     });
     context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, (event: any) => {
-      castButton.textContent = connected() ? 'Desconectar Cast' : 'Cast';
+      const label = connected() ? 'Desconectar Google Cast' : 'Enviar a Google Cast';
+      castButton.title = label;
+      castButton.setAttribute('aria-label', label);
       castButton.setAttribute('aria-pressed', String(connected()));
-      if (!connected()) { loadedUrl = ''; status.textContent = 'Google Cast desconectado'; }
+      if (!connected()) { loadedUrl = ''; status.textContent = ''; }
       if (event.sessionState === framework.SessionState.SESSION_STARTED) void load(options.active());
       if (event.sessionState === framework.SessionState.SESSION_RESUMED) {
         const media = context.getCurrentSession()?.getMediaSession();

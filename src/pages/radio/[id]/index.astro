@@ -1,5 +1,7 @@
 ---
 import '@fontsource-variable/source-sans-3';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
 import '../../../styles/theme.css';
 import Brand from '../../../components/Brand.astro';
 import Icon from '../../../components/Icon.astro';
@@ -36,7 +38,7 @@ const selections = recordings
   .filter(item => radioDate(item.start) === date)
   .map(item => {
     const prog = matchProgramForRecording(programs, item.start, item.end);
-    return { ...item, programName: prog?.name || 'Grabación' };
+    return { ...item, programName: prog?.name || '' };
   });
 const songs = songsForDate(channel.id, date, selections, station.now_playing?.played_at);
 
@@ -69,6 +71,8 @@ const formatSongDuration = (seconds: number) => {
 const radioPath = `/radio/${channel.id}/`;
 const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
+const isOldestDay = date === days[days.length - 1];
+const isNewestDay = date === days[0];
 ---
 <!doctype html>
 <html lang="es-CL">
@@ -80,45 +84,58 @@ const nowPlayingArt = station.now_playing?.art || '';
 </head>
 <body class="shared-player-page" data-radio-path={radioPath} data-station-name={stationName} data-live-url={liveStreamUrl}>
   <header class="radio-header">
-    <Brand/>
-    <div class="radio-identity">
-      <strong id="header-station-name">{stationName} a la Carta</strong>
-      <small>Escucha las emisiones de {stationName}</small>
+    <div class="radio-header-inner">
+      <div class="radio-header-brand">
+        <Brand/>
+        <div class="radio-identity">
+          <strong id="header-station-name">{stationName}</strong>
+          <small>Radio a la carta</small>
+        </div>
+      </div>
+
+      <label class="radio-search">
+        <Icon name="search" size={16}/>
+        <input type="search" id="recording-search" placeholder="Buscar programa, horario o canción" aria-label="Buscar programa, horario o canción"/>
+      </label>
     </div>
-    <nav aria-label="Navegación principal">
-      <a href="#inicio" class="is-active">Inicio</a>
-      <a href="#programas">Programas</a>
-      <a href="#grabaciones">Grabaciones</a>
-      <a href="#canciones">Canciones</a>
-    </nav>
-    <label class="radio-search">
-      <Icon name="search" size={17}/>
-      <input type="search" id="recording-search" placeholder="Buscar horario" aria-label="Buscar grabación por horario"/>
-    </label>
   </header>
 
   <main class="radio-page">
-    <h1 class="sr-only">{stationName} a la Carta</h1>
+    <h1 class="sr-only">{stationName} · Radio a la carta</h1>
+
     <div class="radio-layout">
-      <section class="card explorer" id="programas">
+      <aside class="card explorer" id="programas" aria-label="Emisiones por fecha">
         <div class="card-heading">
-          <div>
-            <h2>Explora la programación</h2>
-            <p class="hint">Selecciona un día y escucha las emisiones.</p>
-          </div>
+          <h2>Emisiones</h2>
+          <span class="cuts-count" id="cuts-count-label">
+            {selections.length} {selections.length === 1 ? 'corte' : 'cortes'}
+          </span>
         </div>
+
         <div class="card-body">
           <div class="date-controls">
-            <button class="button icon-step" id="previous-day" type="button" aria-label="Día anterior">‹</button>
+            <button
+              class="button icon-step"
+              id="previous-day"
+              type="button"
+              aria-label="Día anterior"
+              disabled={isOldestDay}
+            >‹</button>
             <label class="date-picker">
-              <Icon name="calendar" size={18}/>
+              <Icon name="calendar" size={16}/>
               <span class="sr-only">Elegir fecha</span>
               <input type="date" id="radio-date" value={date} min={days[days.length - 1]} max={days[0]}/>
             </label>
-            <button class="button icon-step" id="next-day" type="button" aria-label="Día siguiente">›</button>
+            <button
+              class="button icon-step"
+              id="next-day"
+              type="button"
+              aria-label="Día siguiente"
+              disabled={isNewestDay}
+            >›</button>
           </div>
 
-          <nav class="radio-days" aria-label="Fecha de la grabación">
+          <nav class="radio-days" aria-label="Días disponibles">
             {days.map((day, index) => (
               <a
                 href={`${radioPath}?fecha=${day}`}
@@ -126,47 +143,59 @@ const nowPlayingArt = station.now_playing?.art || '';
                 aria-current={day === date ? 'page' : undefined}
                 class:list={['button', 'day-button', day === date ? 'primary' : '']}
               >
-                <strong>{index === 0 ? 'Hoy' : shortLabel(day)}</strong>
+                {index === 0 ? 'Hoy' : shortLabel(day)}
               </a>
             ))}
           </nav>
 
           <div class="recording-day-heading">
             <h3>{dateLabel(date)}</h3>
-            <span id="cuts-count-label">{selections.length} {selections.length === 1 ? 'corte disponible' : 'cortes disponibles'}</span>
           </div>
 
           {selections.length ? (
-            <ul class="radio-hours" id="sidebar-recordings-list">
-              {selections.map(item => (
-                <li>
-                  <button
-                    type="button"
-                    class="button recording-row"
-                    data-radio-audio={radioPath + item.name}
-                    data-radio-name={item.name}
-                    data-radio-start={item.start}
-                    data-radio-end={item.end}
-                    data-radio-time={timeRange(item.start, item.end)}
-                    data-radio-date={dateLabel(date)}
-                    data-radio-program={item.programName}
-                    aria-pressed="false"
-                  >
-                    <span class="segment-icon"><Icon name="play" size={17}/></span>
-                    <span class="segment-meta">
-                      <strong>{item.programName}</strong>
-                      <small>{timeRange(item.start, item.end)} hrs.</small>
-                    </span>
-                    <span class="row-play" aria-hidden="true">▶</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul class="radio-hours" id="sidebar-recordings-list">
+                {selections.map(item => (
+                  <li>
+                    <button
+                      type="button"
+                      class="recording-row"
+                      data-radio-audio={radioPath + item.name}
+                      data-radio-name={item.name}
+                      data-radio-start={item.start}
+                      data-radio-end={item.end}
+                      data-radio-time={timeRange(item.start, item.end)}
+                      data-radio-date={dateLabel(date)}
+                      data-radio-program={item.programName}
+                      aria-pressed="false"
+                    >
+                      <span class="segment-meta">
+                        {item.programName ? (
+                          <>
+                            <strong class="segment-program">{item.programName}</strong>
+                            <small class="segment-time mono">{timeRange(item.start, item.end)} hrs · {recordingDurationLabel(item.start, item.end)}</small>
+                          </>
+                        ) : (
+                          <>
+                            <strong class="segment-time-primary mono">{timeRange(item.start, item.end)} hrs</strong>
+                            <small class="segment-duration">{recordingDurationLabel(item.start, item.end)}</small>
+                          </>
+                        )}
+                      </span>
+                      <span class="row-play" aria-hidden="true">
+                        <Icon name="play" size={14}/>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p class="empty-filter" id="recordings-empty-search" hidden>Sin emisiones que coincidan con la búsqueda.</p>
+            </>
           ) : (
-            <p class="hint">Todavía no hay grabaciones disponibles para esta fecha.</p>
+            <p class="empty-state-inline">Todavía no hay grabaciones disponibles para esta fecha.</p>
           )}
         </div>
-      </section>
+      </aside>
 
       <div class="radio-content">
         <section class="player-panel" id="inicio" aria-labelledby="player-title">
@@ -179,15 +208,18 @@ const nowPlayingArt = station.now_playing?.art || '';
               loading="eager"
             />
             <span id="player-art-fallback" class="player-art-icon" hidden={Boolean(nowPlayingArt)} aria-hidden="true">
-              <Icon name="broadcast" size={50}/>
+              <Icon name="broadcast" size={40}/>
             </span>
           </div>
 
           <div class="player-main">
             <div class="player-top">
-              <span class="mode-badge" id="play-state">En directo</span>
+              <span class="mode-badge" id="play-state" data-mode="live">
+                <span class="live-dot" aria-hidden="true"></span>
+                <span id="play-state-text">En directo</span>
+              </span>
               <button id="go-live" type="button" class="go-live-btn" hidden>
-                <Icon name="broadcast" size={17}/>
+                <Icon name="broadcast" size={15}/>
                 <span>Volver al directo</span>
               </button>
             </div>
@@ -203,95 +235,94 @@ const nowPlayingArt = station.now_playing?.art || '';
             <audio id="radio-live" aria-label="Escuchar en directo" preload="auto" src={liveStreamUrl}></audio>
 
             <div class="custom-controls">
-              <button id="radio-airplay" type="button" class="icon-only-btn" hidden aria-label="Escuchar con AirPlay" title="AirPlay">AirPlay</button>
-              <button id="radio-cast" type="button" class="icon-only-btn" hidden aria-label="Enviar a Google Cast" title="Google Cast">Cast</button>
-              <button id="skip-back" type="button" class="skip-btn" aria-label="Retroceder 15 segundos" title="Retroceder 15 segundos">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/>
-                  <path d="M3.5 4v4.5H8"/>
-                  <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
-                </svg>
-              </button>
-
-              <button id="toggle-play" type="button" class="play-btn" aria-label="Reproducir">
-                <span class="icon-play">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <polygon points="8,5 20,12 8,19"/>
+              <div class="transport-group">
+                <button id="skip-back" type="button" class="skip-btn" aria-label="Retroceder 15 segundos" title="Retroceder 15 s">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/>
+                    <path d="M3.5 4v4.5H8"/>
+                    <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
                   </svg>
-                </span>
-                <span class="icon-pause" hidden>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <rect x="6.5" y="5" width="4" height="14" rx="1"/>
-                    <rect x="13.5" y="5" width="4" height="14" rx="1"/>
-                  </svg>
-                </span>
-              </button>
-
-              <button id="skip-forward" type="button" class="skip-btn" aria-label="Avanzar 15 segundos" title="Avanzar 15 segundos">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M20.5 12a8.5 8.5 0 1 1-2.5-6l2.5 2.5"/>
-                  <path d="M20.5 4v4.5H16"/>
-                  <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
-                </svg>
-              </button>
-
-              <output id="play-time">En directo</output>
-
-              <input
-                id="play-progress"
-                type="range"
-                min="0"
-                max="100"
-                step="0.1"
-                value="50"
-                aria-label="Posición de reproducción"
-              />
-
-              <div class="volume-control">
-                <button id="mute-toggle" type="button" class="icon-only-btn" aria-label="Silenciar o activar sonido">
-                  <span id="vol-icon-on"><Icon name="volume" size={18}/></span>
-                  <span id="vol-icon-mute" hidden><Icon name="mute" size={18}/></span>
                 </button>
-                <input id="play-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volumen"/>
+
+                <button id="toggle-play" type="button" class="play-btn" aria-label="Reproducir">
+                  <span class="icon-play">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <polygon points="8,5 20,12 8,19"/>
+                    </svg>
+                  </span>
+                  <span class="icon-pause" hidden>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <rect x="6.5" y="5" width="4" height="14" rx="1"/>
+                      <rect x="13.5" y="5" width="4" height="14" rx="1"/>
+                    </svg>
+                  </span>
+                </button>
+
+                <button id="skip-forward" type="button" class="skip-btn" aria-label="Avanzar 15 segundos" title="Avanzar 15 s">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20.5 12a8.5 8.5 0 1 1-2.5-6l2.5 2.5"/>
+                    <path d="M20.5 4v4.5H16"/>
+                    <text x="12" y="15.2" text-anchor="middle" font-size="7.2" font-weight="700" fill="currentColor" stroke="none">15</text>
+                  </svg>
+                </button>
               </div>
 
-              <button id="share-recording" type="button" class="icon-only-btn" aria-label="Compartir grabación" title="Copiar enlace">
-                <Icon name="external" size={18}/>
-              </button>
+              <div class="scrubber-group">
+                <output id="play-time" class="mono">En directo</output>
+                <input
+                  id="play-progress"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value="100"
+                  style="--progress: 100%"
+                  aria-label="Posición de reproducción"
+                />
+              </div>
+
+              <div class="utility-group">
+                <div class="volume-control">
+                  <button id="mute-toggle" type="button" class="icon-only-btn" aria-label="Silenciar o activar sonido" title="Volumen">
+                    <span id="vol-icon-on"><Icon name="volume" size={18}/></span>
+                    <span id="vol-icon-mute" hidden><Icon name="mute" size={18}/></span>
+                  </button>
+                  <input id="play-volume" type="range" min="0" max="1" step="0.05" value="1" style="--vol: 100%" aria-label="Volumen"/>
+                </div>
+
+                <button id="radio-airplay" type="button" class="icon-only-btn" hidden aria-label="Escuchar con AirPlay" title="AirPlay">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/>
+                    <polygon points="12 15 17 21 7 21 12 15"/>
+                  </svg>
+                </button>
+
+                <button id="radio-cast" type="button" class="icon-only-btn" hidden aria-label="Enviar a Google Cast" title="Google Cast">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+                    <line x1="2" y1="20" x2="2.01" y2="20"/>
+                  </svg>
+                </button>
+
+                <button id="share-recording" type="button" class="icon-only-btn" aria-label="Copiar enlace" title="Copiar enlace">
+                  <span id="share-icon-link"><Icon name="link" size={17}/></span>
+                  <span id="share-icon-check" hidden><Icon name="check" size={17}/></span>
+                </button>
+              </div>
             </div>
 
             <p id="radio-error" class="player-error" role="status" hidden>
-              No se pudo cargar el audio. Selecciona el horario para volver a intentarlo.
+              No se pudo cargar el audio. Selecciona otro tramo o vuelve al directo.
             </p>
-          </div>
-        </section>
-
-        <section class="card" id="grabaciones">
-          <div class="card-heading">
-            <h2>Grabaciones del día</h2>
-            <span class="hint">Archivos por hora</span>
-          </div>
-          <div class="recording-chips" id="recording-chips-list">
-            {selections.map(item => (
-              <button
-                class="button"
-                type="button"
-                data-chip={radioPath + item.name}
-                data-chip-name={item.name}
-                aria-pressed="false"
-              >
-                <Icon name="play" size={15}/>
-                {timeRange(item.start, item.end)}
-              </button>
-            ))}
-            {!selections.length && <p class="hint">Aún no hay archivos disponibles.</p>}
           </div>
         </section>
 
         <section class="card songs-panel" id="canciones" hidden={!songs.length}>
           <div class="card-heading">
-            <h2>Horario de canciones</h2>
-            <span class="hint">Sincronizado con la estación y grabaciones</span>
+            <h2>Canciones emitidas</h2>
+            <span class="cuts-count" id="songs-count-label">
+              {songs.length} {songs.length === 1 ? 'registro' : 'registros'}
+            </span>
           </div>
           <div class="card-body songs-table-wrap">
             <table id="songs-table">
@@ -308,7 +339,7 @@ const nowPlayingArt = station.now_playing?.art || '';
                   <th>Canción</th>
                   <th>Artista</th>
                   <th>Duración</th>
-                  <th>Archivo</th>
+                  <th>Grabación</th>
                 </tr>
               </thead>
               <tbody id="songs-tbody">
@@ -320,7 +351,7 @@ const nowPlayingArt = station.now_playing?.art || '';
                     data-played-at={song.played_at}
                   >
                     <td class="song-time-cell">
-                      <strong>{radioHour(song.played_at * 1000)}</strong>
+                      <span class="mono">{radioHour(song.played_at * 1000)}</span>
                       {song.is_current && <span class="song-live-pill">Ahora</span>}
                     </td>
                     <td class="song-title-td">
@@ -330,7 +361,7 @@ const nowPlayingArt = station.now_playing?.art || '';
                       </div>
                     </td>
                     <td class="song-artist-td" title={song.artist || stationName}>{song.artist || stationName}</td>
-                    <td class="song-duration-cell">{formatSongDuration(song.duration)}</td>
+                    <td class="song-duration-cell mono">{formatSongDuration(song.duration)}</td>
                     <td class="song-action-td">
                       {song.recording ? (
                         <button
@@ -341,12 +372,12 @@ const nowPlayingArt = station.now_playing?.art || '';
                           data-seek-title={`${song.artist ? song.artist + ' — ' : ''}${song.title}`}
                           data-seek-art={song.art}
                         >
-                          <Icon name="play" size={13}/>
-                          <span>{timeRange(song.recording.start, song.recording.end)}</span>
+                          <Icon name="play" size={12}/>
+                          <span class="mono">{timeRange(song.recording.start, song.recording.end)}</span>
                         </button>
                       ) : song.is_current ? (
                         <button type="button" class="button small song-seek-btn" data-trigger-live="true">
-                          <Icon name="broadcast" size={13}/>
+                          <Icon name="broadcast" size={12}/>
                           <span>En directo</span>
                         </button>
                       ) : (
@@ -357,19 +388,20 @@ const nowPlayingArt = station.now_playing?.art || '';
                 )) : (
                   <tr>
                     <td colspan="5" class="songs-empty-cell">
-                      La radio aún no dispone de un registro de canciones emitidas.
+                      No hay registro de canciones para esta fecha.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            <p class="empty-filter" id="songs-empty-search" hidden>Sin canciones que coincidan con la búsqueda.</p>
           </div>
         </section>
 
         <section class="card songs-panel" id="horario-grabaciones" hidden={Boolean(songs.length)}>
           <div class="card-heading">
-            <h2>Horario de grabaciones</h2>
-            <span class="hint">{dateLabel(date)} · Hora de Chile continental</span>
+            <h2>Detalle de grabaciones</h2>
+            <span class="cuts-count">{dateLabel(date)}</span>
           </div>
           <div class="card-body songs-table-wrap">
             <table>
@@ -382,7 +414,7 @@ const nowPlayingArt = station.now_playing?.art || '';
               <thead>
                 <tr>
                   <th>Inicio</th>
-                  <th>Tramo de grabación</th>
+                  <th>Tramo</th>
                   <th>Duración</th>
                   <th>Escuchar</th>
                 </tr>
@@ -390,17 +422,19 @@ const nowPlayingArt = station.now_playing?.art || '';
               <tbody>
                 {selections.length ? selections.map(item => (
                   <tr>
-                    <td class="song-time-cell"><strong>{radioHour(item.start)} hrs.</strong></td>
-                    <td class="song-title-td"><strong>{item.programName} · {timeRange(item.start, item.end)} hrs.</strong></td>
-                    <td class="song-duration-cell">{recordingDurationLabel(item.start, item.end)}</td>
+                    <td class="song-time-cell mono"><strong>{radioHour(item.start)}</strong></td>
+                    <td class="song-title-td">
+                      <strong>{item.programName ? `${item.programName} · ${timeRange(item.start, item.end)} hrs` : `Tramo ${timeRange(item.start, item.end)} hrs`}</strong>
+                    </td>
+                    <td class="song-duration-cell mono">{recordingDurationLabel(item.start, item.end)}</td>
                     <td class="song-action-td">
                       <button
                         type="button"
                         class="button small song-seek-btn"
                         data-chip={radioPath + item.name}
                       >
-                        <Icon name="play" size={13}/>
-                        <span>{timeRange(item.start, item.end)}</span>
+                        <Icon name="play" size={12}/>
+                        <span class="mono">{timeRange(item.start, item.end)}</span>
                       </button>
                     </td>
                   </tr>
@@ -420,16 +454,19 @@ const nowPlayingArt = station.now_playing?.art || '';
   </main>
 
   <footer class="radio-footer">
-    <Brand/>
-    <span>{stationName} · Radio a la Carta</span>
-    <span>Hora de Chile continental</span>
+    <div class="radio-footer-inner">
+      <Brand/>
+      <span class="footer-station">{stationName}</span>
+      <span class="footer-tz">Hora de Chile continental</span>
+    </div>
   </footer>
 
   <nav class="mobile-radio-nav" aria-label="Navegación móvil">
-    <a href="#inicio"><Icon name="home"/>Inicio</a>
-    <a href="#programas"><Icon name="broadcast"/>Programas</a>
-    <a href="#grabaciones"><Icon name="list"/>Grabaciones</a>
-    <a href="#radio-date"><Icon name="calendar"/>Calendario</a>
+    <a href="#inicio"><Icon name="broadcast" size={18}/><span>Directo</span></a>
+    <a href="#programas"><Icon name="clock" size={18}/><span>Emisiones</span></a>
+    <a href={songs.length ? '#canciones' : '#horario-grabaciones'} id="mobile-songs-link">
+      <Icon name="music" size={18}/><span>Canciones</span>
+    </a>
   </nav>
 
   <script>
@@ -448,6 +485,7 @@ const nowPlayingArt = station.now_playing?.art || '';
     const progress = document.querySelector<HTMLInputElement>('#play-progress')!;
     const playTime = document.querySelector<HTMLElement>('#play-time')!;
     const statusBadge = document.querySelector<HTMLElement>('#play-state')!;
+    const statusText = document.querySelector<HTMLElement>('#play-state-text')!;
     const goLiveBtn = document.querySelector<HTMLButtonElement>('#go-live')!;
     const artImg = document.querySelector<HTMLImageElement>('#player-art-img')!;
     const artFallback = document.querySelector<HTMLElement>('#player-art-fallback')!;
@@ -457,11 +495,16 @@ const nowPlayingArt = station.now_playing?.art || '';
     const muteBtn = document.querySelector<HTMLButtonElement>('#mute-toggle')!;
     const volIconOn = document.querySelector<HTMLElement>('#vol-icon-on')!;
     const volIconMute = document.querySelector<HTMLElement>('#vol-icon-mute')!;
+    const shareBtn = document.querySelector<HTMLButtonElement>('#share-recording')!;
+    const shareIconLink = document.querySelector<HTMLElement>('#share-icon-link')!;
+    const shareIconCheck = document.querySelector<HTMLElement>('#share-icon-check')!;
+    const searchInput = document.querySelector<HTMLInputElement>('#recording-search')!;
 
     let choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
     let mode: 'live' | 'archive' = 'live';
     const { initRadioWireless } = await import('../../../lib/radio-wireless');
     initRadioWireless({ audio, live, active: () => mode === 'live' ? live : audio, title: stationFallbackName, onEnd: () => switchToPresent(true) });
+
     let activeIndex = -1;
     let activeStartMs = 0;
     let activeEndMs = 0;
@@ -471,11 +514,23 @@ const nowPlayingArt = station.now_playing?.art || '';
     let lastVolume = 1;
     let liveTrackTitle = selection.dataset.liveText || 'Señal en directo';
     let liveTrackArt = artImg.getAttribute('src') || '';
+    let shareResetTimer: number | null = null;
 
     const clock = (seconds: number) =>
       Number.isFinite(seconds) && seconds >= 0
         ? `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
         : '0:00';
+
+    function setProgressValue(pct: number) {
+      const clamped = Math.max(0, Math.min(100, pct));
+      progress.value = String(clamped);
+      progress.style.setProperty('--progress', `${clamped}%`);
+    }
+
+    function setBadgeState(text: string, badgeMode: 'live' | 'archive' | 'paused' | 'error' = mode) {
+      statusText.textContent = text;
+      statusBadge.dataset.mode = badgeMode;
+    }
 
     function getKnownDuration(index = activeIndex): number {
       if (index === activeIndex && Number.isFinite(audio.duration) && audio.duration > 1) {
@@ -508,7 +563,7 @@ const nowPlayingArt = station.now_playing?.art || '';
         const viewportWidth = subtitleViewport.clientWidth;
         const textWidth = selection.scrollWidth;
         const overflow = Math.ceil(textWidth - viewportWidth);
-        if ( viewportWidth > 0 && overflow > 4 ) {
+        if (viewportWidth > 0 && overflow > 4) {
           const duration = Math.max(8, Math.min(18, 6.5 + overflow / 26));
           selection.style.setProperty('--scroll-offset', `-${overflow}px`);
           selection.style.setProperty('--scroll-duration', `${duration.toFixed(1)}s`);
@@ -552,6 +607,36 @@ const nowPlayingArt = station.now_playing?.art || '';
       });
     }
 
+    function applySearchFilter() {
+      const query = searchInput.value.trim().toLowerCase();
+      let visibleCuts = 0;
+      for (const choice of choices) {
+        const match = !query || (choice.textContent || '').toLowerCase().includes(query);
+        choice.closest('li')!.hidden = !match;
+        if (match) visibleCuts++;
+      }
+      const cutsCountEl = document.querySelector<HTMLElement>('#cuts-count-label');
+      if (cutsCountEl) {
+        cutsCountEl.textContent = `${visibleCuts} ${visibleCuts === 1 ? 'corte' : 'cortes'}`;
+      }
+      const recEmpty = document.querySelector<HTMLElement>('#recordings-empty-search');
+      if (recEmpty) recEmpty.hidden = !(choices.length > 0 && visibleCuts === 0);
+
+      const songRows = [...document.querySelectorAll<HTMLTableRowElement>('[data-song-row]')];
+      let visibleSongs = 0;
+      for (const row of songRows) {
+        const match = !query || (row.textContent || '').toLowerCase().includes(query);
+        row.hidden = !match;
+        if (match) visibleSongs++;
+      }
+      const songsCountEl = document.querySelector<HTMLElement>('#songs-count-label');
+      if (songsCountEl && songRows.length > 0) {
+        songsCountEl.textContent = `${visibleSongs} ${visibleSongs === 1 ? 'registro' : 'registros'}`;
+      }
+      const songsEmpty = document.querySelector<HTMLElement>('#songs-empty-search');
+      if (songsEmpty) songsEmpty.hidden = !(songRows.length > 0 && visibleSongs === 0);
+    }
+
     function switchToPresent(autoPlay = true) {
       mode = 'live';
       activeIndex = -1;
@@ -559,24 +644,24 @@ const nowPlayingArt = station.now_playing?.art || '';
       pendingSeek = null;
       audio.pause();
       error.hidden = true;
-      statusBadge.textContent = 'En directo';
+      setBadgeState('En directo', 'live');
       goLiveBtn.hidden = true;
       setSubtitleText(liveTrackTitle);
       setArtwork(liveTrackArt);
       progress.disabled = false;
-      progress.value = '50';
+      setProgressValue(100);
       playTime.textContent = 'En directo';
       updatePressedStates(null);
 
       if (autoPlay && liveStreamUrl) {
-        statusBadge.textContent = 'Conectando…';
+        setBadgeState('Conectando…', 'live');
         if (live.getAttribute('src') !== liveStreamUrl) {
           live.src = liveStreamUrl;
         }
         live.load();
         void live.play().catch(() => {
           setPlayIcon(false);
-          statusBadge.textContent = 'En directo';
+          setBadgeState('En directo', 'live');
         });
       } else {
         setPlayIcon(!live.paused);
@@ -597,7 +682,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       } catch {}
       if (dur > 0) {
         playTime.textContent = `${clock(clamped)} / ${clock(dur)}`;
-        progress.value = String(Math.min(100, Math.max(0, (clamped / dur) * 100)));
+        setProgressValue((clamped / dur) * 100);
       }
     }
 
@@ -621,24 +706,22 @@ const nowPlayingArt = station.now_playing?.art || '';
 
       live.pause();
       error.hidden = true;
-      statusBadge.textContent = 'Grabación disponible';
+      setBadgeState('Grabación', 'archive');
       goLiveBtn.hidden = false;
 
       const dateText = button.dataset.radioDate || '';
       const rangeText = button.dataset.radioTime || '';
-      const progName = button.dataset.radioProgram && button.dataset.radioProgram !== 'Grabación'
-        ? `${button.dataset.radioProgram} · `
-        : '';
+      const progName = button.dataset.radioProgram ? `${button.dataset.radioProgram} · ` : '';
       setSubtitleText(
         customSubtitle
-          ? `${customSubtitle} · ${rangeText} hrs.`
-          : `${progName}${dateText ? dateText + ' · ' : ''}${rangeText} hrs.`
+          ? `${customSubtitle} · ${rangeText} hrs`
+          : `${progName}${dateText ? dateText + ' · ' : ''}${rangeText} hrs`
       );
 
       setArtwork(customArt || liveTrackArt);
       progress.disabled = false;
       playTime.textContent = `${clock(targetOffset)} / ${clock(dur)}`;
-      progress.value = dur > 0 ? String(Math.min(100, Math.max(0, (targetOffset / dur) * 100))) : '0';
+      setProgressValue(dur > 0 ? (targetOffset / dur) * 100 : 0);
       updatePressedStates(baseAudioUrl);
 
       const currentBase = (audio.getAttribute('src') || '').split('#')[0];
@@ -682,7 +765,7 @@ const nowPlayingArt = station.now_playing?.art || '';
         if (live.paused) {
           if (!live.getAttribute('src') && liveStreamUrl) live.src = liveStreamUrl;
           void live.play().catch(() => {
-            statusBadge.textContent = 'No se pudo reproducir';
+            setBadgeState('No se pudo reproducir', 'error');
           });
         } else {
           live.pause();
@@ -690,7 +773,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       } else {
         if (audio.paused) {
           void audio.play().catch(() => {
-            statusBadge.textContent = 'No se pudo reproducir';
+            setBadgeState('No se pudo reproducir', 'error');
           });
         } else {
           audio.pause();
@@ -719,10 +802,9 @@ const nowPlayingArt = station.now_playing?.art || '';
         if (!live.paused && live.currentTime >= 15) {
           try {
             live.currentTime = Math.max(0, live.currentTime - 15);
-            statusBadge.textContent = 'En directo (-15s)';
+            setBadgeState('En directo (-15 s)', 'archive');
             goLiveBtn.hidden = false;
-            const ratio = Math.max(10, Math.min(90, (live.currentTime / Math.max(30, live.currentTime + 15)) * 50));
-            progress.value = String(ratio);
+            setProgressValue(85);
             return;
           } catch {}
         }
@@ -751,9 +833,9 @@ const nowPlayingArt = station.now_playing?.art || '';
         if (bufferedEnd - live.currentTime > 2) {
           live.currentTime = Math.min(bufferedEnd - 0.5, live.currentTime + 15);
           if (bufferedEnd - live.currentTime <= 2) {
-            statusBadge.textContent = 'En directo';
+            setBadgeState('En directo', 'live');
             goLiveBtn.hidden = true;
-            progress.value = '50';
+            setProgressValue(100);
           }
         }
       }
@@ -762,6 +844,7 @@ const nowPlayingArt = station.now_playing?.art || '';
     progress.addEventListener('input', () => {
       isScrubbing = true;
       const val = Number(progress.value);
+      setProgressValue(val);
       if (mode === 'archive') {
         const dur = getKnownDuration();
         if (dur > 0) {
@@ -769,10 +852,10 @@ const nowPlayingArt = station.now_playing?.art || '';
           playTime.textContent = `${clock(previewSec)} / ${clock(dur)}`;
         }
       } else {
-        if (val < 50 && choices.length > 0) {
+        if (val < 96 && choices.length > 0) {
           const latestIndex = choices.length - 1;
           const latestDur = getKnownDuration(latestIndex);
-          const targetSec = (val / 50) * latestDur;
+          const targetSec = (val / 100) * latestDur;
           playTime.textContent = `${clock(targetSec)} / ${clock(latestDur)}`;
         } else {
           playTime.textContent = 'En directo';
@@ -790,13 +873,13 @@ const nowPlayingArt = station.now_playing?.art || '';
           if (audio.paused) void audio.play().catch(() => {});
         }
       } else {
-        if (val < 48 && choices.length > 0) {
+        if (val < 96 && choices.length > 0) {
           const latestIndex = choices.length - 1;
           const latestDur = getKnownDuration(latestIndex);
-          const targetSec = (val / 50) * latestDur;
+          const targetSec = (val / 100) * latestDur;
           playArchive(latestIndex, targetSec);
         } else {
-          progress.value = '50';
+          setProgressValue(100);
           playTime.textContent = 'En directo';
         }
       }
@@ -807,6 +890,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       audio.volume = clamped;
       live.volume = clamped;
       volumeInput.value = String(clamped);
+      volumeInput.style.setProperty('--vol', `${Math.round(clamped * 100)}%`);
       const isMuted = clamped === 0;
       volIconOn.hidden = isMuted;
       volIconMute.hidden = !isMuted;
@@ -831,28 +915,28 @@ const nowPlayingArt = station.now_playing?.art || '';
       audio.pause();
       if (mode === 'live') {
         setPlayIcon(true);
-        statusBadge.textContent = 'En directo';
+        setBadgeState('En directo', 'live');
       }
     });
     live.addEventListener('playing', () => {
       if (mode === 'live') {
         setPlayIcon(true);
-        statusBadge.textContent = 'En directo';
+        setBadgeState('En directo', 'live');
       }
     });
     live.addEventListener('waiting', () => {
-      if (mode === 'live') statusBadge.textContent = 'Cargando audio…';
+      if (mode === 'live') setBadgeState('Cargando…', 'live');
     });
     live.addEventListener('pause', () => {
       if (mode === 'live') {
         setPlayIcon(false);
-        statusBadge.textContent = 'Pausado';
+        setBadgeState('Pausado', 'paused');
       }
     });
     live.addEventListener('error', () => {
       if (mode === 'live') {
         setPlayIcon(false);
-        statusBadge.textContent = 'En directo';
+        setBadgeState('En directo', 'live');
       }
     });
 
@@ -860,29 +944,29 @@ const nowPlayingArt = station.now_playing?.art || '';
       live.pause();
       if (mode === 'archive') {
         setPlayIcon(true);
-        statusBadge.textContent = 'Reproduciendo';
+        setBadgeState('Reproduciendo', 'archive');
       }
     });
     audio.addEventListener('playing', () => {
       if (mode === 'archive') {
         setPlayIcon(true);
-        statusBadge.textContent = 'Reproduciendo';
+        setBadgeState('Reproduciendo', 'archive');
       }
     });
     audio.addEventListener('waiting', () => {
-      if (mode === 'archive') statusBadge.textContent = 'Cargando audio…';
+      if (mode === 'archive') setBadgeState('Cargando…', 'archive');
     });
     audio.addEventListener('pause', () => {
       if (mode === 'archive') {
         setPlayIcon(false);
-        statusBadge.textContent = 'Pausado';
+        setBadgeState('Pausado', 'paused');
       }
     });
     audio.addEventListener('error', () => {
       if (mode === 'archive') {
         setPlayIcon(false);
         error.hidden = false;
-        statusBadge.textContent = 'No se pudo cargar el audio';
+        setBadgeState('Error de audio', 'error');
       }
     });
     audio.addEventListener('timeupdate', () => {
@@ -890,9 +974,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       const cur = pendingSeek !== null ? pendingSeek : audio.currentTime;
       const dur = getKnownDuration();
       playTime.textContent = `${clock(cur)} / ${clock(dur)}`;
-      if (dur > 0) {
-        progress.value = String(Math.min(100, Math.max(0, (cur / dur) * 100)));
-      }
+      if (dur > 0) setProgressValue((cur / dur) * 100);
     });
     audio.addEventListener('ended', () => {
       if (activeIndex >= 0 && activeIndex + 1 < choices.length) {
@@ -902,7 +984,7 @@ const nowPlayingArt = station.now_playing?.art || '';
       }
     });
 
-    document.querySelector<HTMLButtonElement>('#share-recording')!.addEventListener('click', async () => {
+    shareBtn.addEventListener('click', async () => {
       const shareUrl = new URL(location.href);
       if (mode === 'archive' && activeName) {
         shareUrl.searchParams.set('corte', activeName);
@@ -913,21 +995,23 @@ const nowPlayingArt = station.now_playing?.art || '';
       }
       try {
         await navigator.clipboard.writeText(shareUrl.href);
-        statusBadge.textContent = 'Enlace copiado';
+        shareIconLink.hidden = true;
+        shareIconCheck.hidden = false;
+        shareBtn.title = 'Enlace copiado';
+        shareBtn.setAttribute('aria-label', 'Enlace copiado');
+        if (shareResetTimer) window.clearTimeout(shareResetTimer);
+        shareResetTimer = window.setTimeout(() => {
+          shareIconLink.hidden = false;
+          shareIconCheck.hidden = true;
+          shareBtn.title = 'Copiar enlace';
+          shareBtn.setAttribute('aria-label', 'Copiar enlace');
+        }, 2200);
       } catch {
-        statusBadge.textContent = 'Copia la dirección de esta página para compartir';
+        shareBtn.title = 'Copia la URL desde la barra de direcciones';
       }
     });
 
-    document.querySelector<HTMLInputElement>('#recording-search')!.addEventListener('input', event => {
-      const query = (event.target as HTMLInputElement).value.trim().toLowerCase();
-      for (const choice of choices) {
-        choice.closest('li')!.hidden = !choice.textContent?.toLowerCase().includes(query);
-      }
-      document.querySelectorAll<HTMLTableRowElement>('[data-song-row]').forEach(row => {
-        row.hidden = !row.textContent?.toLowerCase().includes(query);
-      });
-    });
+    searchInput.addEventListener('input', () => applySearchFilter());
 
     document.addEventListener('click', event => {
       const target = event.target as Element;
@@ -971,9 +1055,9 @@ const nowPlayingArt = station.now_playing?.art || '';
       }
     });
 
-    const dateInput = document.querySelector<HTMLInputElement>('#radio-date');
     async function changeDate(date: string, push = true) {
-      if (!dateInput || date < dateInput.min || date > dateInput.max) return;
+      const currentDateInput = document.querySelector<HTMLInputElement>('#radio-date');
+      if (!currentDateInput || !date || date < currentDateInput.min || date > currentDateInput.max) return;
       const url = new URL(location.href);
       url.searchParams.set('fecha', date);
       url.searchParams.delete('corte');
@@ -982,15 +1066,12 @@ const nowPlayingArt = station.now_playing?.art || '';
         const response = await fetch(url, { headers: { Accept: 'text/html' } });
         if (!response.ok) throw new Error('date');
         const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-        const currentExplorer = document.querySelector('.explorer .card-body');
-        const replacementExplorer = page.querySelector('.explorer .card-body');
+
+        const currentExplorer = document.querySelector('.explorer');
+        const replacementExplorer = page.querySelector('.explorer');
         if (!currentExplorer || !replacementExplorer) return;
         currentExplorer.innerHTML = replacementExplorer.innerHTML;
 
-        const chips = page.querySelector('.recording-chips');
-        if (chips && document.querySelector('.recording-chips')) {
-          document.querySelector('.recording-chips')!.innerHTML = chips.innerHTML;
-        }
         const songsSection = page.querySelector('#canciones') as HTMLElement | null;
         const localSongs = document.querySelector<HTMLElement>('#canciones');
         if (songsSection && localSongs) {
@@ -1006,6 +1087,7 @@ const nowPlayingArt = station.now_playing?.art || '';
 
         choices = [...document.querySelectorAll<HTMLButtonElement>('[data-radio-audio]')];
         updatePressedStates(mode === 'archive' && choices[activeIndex] ? choices[activeIndex].dataset.radioAudio || null : null);
+        applySearchFilter();
         if (push) history.pushState({}, '', url);
       } catch {
         location.href = url.href;
@@ -1018,17 +1100,18 @@ const nowPlayingArt = station.now_playing?.art || '';
     });
 
     document.addEventListener('click', event => {
-      const id = (event.target as Element).closest('button')?.id;
-      if (id !== 'previous-day' && id !== 'next-day') return;
+      const btn = (event.target as Element).closest<HTMLButtonElement>('button');
+      if (!btn || (btn.id !== 'previous-day' && btn.id !== 'next-day') || btn.disabled) return;
       const input = document.querySelector<HTMLInputElement>('#radio-date');
       if (!input) return;
       const day = new Date(input.value + 'T12:00:00Z');
-      day.setUTCDate(day.getUTCDate() + (id === 'previous-day' ? -1 : 1));
+      day.setUTCDate(day.getUTCDate() + (btn.id === 'previous-day' ? -1 : 1));
       void changeDate(day.toISOString().slice(0, 10));
     });
 
     window.addEventListener('popstate', () => {
-      void changeDate(new URL(location.href).searchParams.get('fecha') || dateInput?.max || '', false);
+      const input = document.querySelector<HTMLInputElement>('#radio-date');
+      void changeDate(new URL(location.href).searchParams.get('fecha') || input?.max || '', false);
     });
 
     function escapeHtml(str: string) {
@@ -1039,35 +1122,36 @@ const nowPlayingArt = station.now_playing?.art || '';
       const songsCard = document.querySelector<HTMLElement>('#canciones');
       const recCard = document.querySelector<HTMLElement>('#horario-grabaciones');
       const tbody = document.querySelector<HTMLElement>('#songs-tbody');
+      const mobileSongsLink = document.querySelector<HTMLAnchorElement>('#mobile-songs-link');
       if (!tbody) return;
-      const searchVal = (document.querySelector<HTMLInputElement>('#recording-search')?.value || '').trim().toLowerCase();
       if (!Array.isArray(songs) || !songs.length) {
         if (songsCard) songsCard.hidden = true;
         if (recCard) recCard.hidden = false;
+        if (mobileSongsLink) mobileSongsLink.setAttribute('href', '#horario-grabaciones');
         return;
       }
       if (songsCard) songsCard.hidden = false;
       if (recCard) recCard.hidden = true;
+      if (mobileSongsLink) mobileSongsLink.setAttribute('href', '#canciones');
       tbody.innerHTML = songs.map(song => {
         const artist = song.artist || stationFallbackName;
         const durLabel = song.duration > 0 ? clock(song.duration) : '—';
         const seekTitle = `${song.artist ? song.artist + ' — ' : ''}${song.title}`;
         let actionHtml = '<span class="no-archive-tag">Sin corte</span>';
         if (song.recording) {
-          actionHtml = `<button type="button" class="button small song-seek-btn" data-seek-audio="${escapeHtml(song.recording.url)}" data-seek-offset="${Number(song.recording.offset) || 0}" data-seek-title="${escapeHtml(seekTitle)}" data-seek-art="${escapeHtml(song.art || '')}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><span>${escapeHtml(song.recording.range)}</span></button>`;
+          actionHtml = `<button type="button" class="button small song-seek-btn" data-seek-audio="${escapeHtml(song.recording.url)}" data-seek-offset="${Number(song.recording.offset) || 0}" data-seek-title="${escapeHtml(seekTitle)}" data-seek-art="${escapeHtml(song.art || '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><span class="mono">${escapeHtml(song.recording.range)}</span></button>`;
         } else if (song.isCurrent) {
-          actionHtml = `<button type="button" class="button small song-seek-btn" data-trigger-live="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a6 6 0 0 0 0 8 M16 8a6 6 0 0 1 0 8 M4 4a12 12 0 0 0 0 16 M20 4a12 12 0 0 1 0 16 M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg><span>En directo</span></button>`;
+          actionHtml = `<button type="button" class="button small song-seek-btn" data-trigger-live="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a6 6 0 0 0 0 8 M16 8a6 6 0 0 1 0 8 M4 4a12 12 0 0 0 0 16 M20 4a12 12 0 0 1 0 16 M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg><span>En directo</span></button>`;
         }
-        const rowText = `${song.time} ${song.title} ${artist}`.toLowerCase();
-        const hiddenAttr = searchVal && !rowText.includes(searchVal) ? ' hidden' : '';
-        return `<tr data-song-row data-has-recording="${song.recording ? 'true' : 'false'}" data-recording-name="${escapeHtml(song.recording?.name || '')}" data-played-at="${Number(song.playedAt) || 0}"${hiddenAttr}>
-          <td class="song-time-cell"><strong>${escapeHtml(song.time)}</strong>${song.isCurrent ? '<span class="song-live-pill">Ahora</span>' : ''}</td>
+        return `<tr data-song-row data-has-recording="${song.recording ? 'true' : 'false'}" data-recording-name="${escapeHtml(song.recording?.name || '')}" data-played-at="${Number(song.playedAt) || 0}">
+          <td class="song-time-cell"><span class="mono">${escapeHtml(song.time)}</span>${song.isCurrent ? '<span class="song-live-pill">Ahora</span>' : ''}</td>
           <td class="song-title-td"><div class="song-title-cell">${song.art ? `<img src="${escapeHtml(song.art)}" alt="" class="song-thumb" loading="lazy"/>` : ''}<strong title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</strong></div></td>
           <td class="song-artist-td" title="${escapeHtml(artist)}">${escapeHtml(artist)}</td>
-          <td class="song-duration-cell">${durLabel}</td>
+          <td class="song-duration-cell mono">${durLabel}</td>
           <td class="song-action-td">${actionHtml}</td>
         </tr>`;
       }).join('');
+      applySearchFilter();
     }
 
     async function refreshStationStatus() {
@@ -1101,8 +1185,10 @@ const nowPlayingArt = station.now_playing?.art || '';
             latestChoice.dataset.radioName = latestData.name;
             latestChoice.dataset.radioEnd = String(latestData.end);
             latestChoice.dataset.radioTime = latestData.range;
-            const smallEl = latestChoice.querySelector('small');
-            if (smallEl) smallEl.textContent = `${latestData.range} hrs.`;
+            const timePrimary = latestChoice.querySelector('.segment-time-primary');
+            if (timePrimary) timePrimary.textContent = `${latestData.range} hrs`;
+            const timeSmall = latestChoice.querySelector('.segment-time');
+            if (timeSmall) timeSmall.textContent = `${latestData.range} hrs`;
             if (mode === 'archive' && activeIndex === choices.length - 1) {
               activeEndMs = latestData.end;
             }
@@ -1132,104 +1218,149 @@ const nowPlayingArt = station.now_playing?.art || '';
   </script>
 </body>
 </html>
+
 <style>
 :global(body.shared-player-page) {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   overflow-x: hidden;
+  background: var(--canvas);
+  color: var(--text);
 }
+
+/* Header */
 .radio-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.radio-header-inner {
+  width: min(100%, 1380px);
+  margin: 0 auto;
+  padding: 12px 24px;
+  min-height: 66px;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 20px 3%;
-  background: #fff;
-  border-bottom: 1px solid #d6dfea;
-  max-width: 100%;
+  justify-content: space-between;
+  gap: 20px;
+}
+.radio-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
 }
 .radio-identity {
-  border-left: 1px solid #d6dfea;
-  padding-left: 24px;
-  display: grid;
-  min-width: 190px;
+  border-left: 1px solid var(--border);
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 .radio-identity strong {
-  font-size: 22px;
-  color: #102a50;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--heading);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .radio-identity small {
   font-size: 13px;
-  color: #526176;
-}
-.radio-header nav {
-  display: flex;
-  gap: 22px;
-  margin-left: auto;
-  font-weight: 600;
-  font-size: 14px;
-}
-.radio-header nav a {
-  align-self: center;
-}
-.radio-header nav a.is-active {
-  background: #075cd6;
-  color: #fff;
-  padding: 8px 16px;
-  border-radius: 5px;
+  color: var(--muted);
+  line-height: 1.25;
 }
 .radio-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #d6dfea;
-  border-radius: 16px;
-  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 0 12px;
+  min-height: 40px;
+  width: min(320px, 100%);
+  flex-shrink: 0;
+}
+.radio-search:focus-within {
+  background: var(--surface);
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
 }
 .radio-search input {
   border: 0;
-  width: 150px;
-  font: inherit;
-  font-size: 13px;
+  background: transparent;
+  color: var(--text);
+  width: 100%;
   min-width: 0;
+  font: inherit;
+  font-size: 14px;
   outline: none;
 }
+.radio-search input::placeholder {
+  color: var(--muted);
+}
 
+/* Main two-column layout */
 .radio-page {
-  width: min(100%, 1440px);
+  flex: 1;
+  width: min(100%, 1380px);
   margin: 0 auto;
-  padding: 32px 20px 0;
+  padding: 24px 24px 36px;
+  margin-left: auto;
   min-height: 0;
 }
 .radio-layout {
   display: grid;
-  grid-template-columns: minmax(280px, .82fr) minmax(0, 1.75fr);
-  gap: 18px;
+  grid-template-columns: 332px minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 .radio-content {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   min-width: 0;
 }
 .radio-page .card {
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   margin: 0;
 }
 .radio-page .card-heading {
-  min-height: 56px;
+  padding: 12px 16px;
+  min-height: 48px;
+  gap: 12px;
 }
-.explorer .card-heading p {
-  margin: 4px 0 0;
+.radio-page .card-heading h2 {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--heading);
+}
+.cuts-count {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
+/* Sidebar: Emisiones */
+.explorer .card-body {
+  padding: 14px;
+}
 .date-controls {
   display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 .date-controls > .icon-step {
-  width: 42px;
-  min-height: 44px;
-  font-size: 24px;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
 }
 .date-picker {
   display: flex;
@@ -1237,9 +1368,15 @@ const nowPlayingArt = station.now_playing?.art || '';
   gap: 8px;
   flex: 1;
   min-width: 0;
+  min-height: 38px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+}
+.date-picker:focus-within {
+  border-color: var(--accent);
 }
 .date-picker input {
   width: 100%;
@@ -1248,106 +1385,148 @@ const nowPlayingArt = station.now_playing?.art || '';
   background: transparent;
   color: var(--text);
   font: inherit;
+  font-size: 14px;
+  outline: none;
 }
 
-/* Single-line Day Buttons */
 .radio-days {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-  padding-bottom: 16px;
+  gap: 5px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
 .day-button {
   min-width: 0;
-  min-height: 44px;
-  padding: 6px 4px;
+  min-height: 36px;
+  padding: 4px 2px;
   font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .recording-day-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
+  padding: 12px 0 8px;
 }
 .recording-day-heading h3 {
-  margin: 16px 0 12px;
-}
-.recording-day-heading span {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--muted);
-  font-size: 13px;
 }
+
 .radio-hours {
   list-style: none;
   padding: 0;
-  margin: 12px 0 0;
-  display: grid;
-  gap: 4px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 572px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 .radio-hours li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  border-top: 1px solid var(--border);
+}
+.radio-hours li:first-child {
+  border-top: 0;
 }
 .recording-row {
   width: 100%;
-  justify-content: flex-start;
-  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+  min-height: 52px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
   text-align: left;
-  border-color: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
-.segment-meta {
-  display: grid;
-  gap: 2px;
-}
-.segment-meta small {
-  font-size: 13px;
-  color: var(--muted);
-}
-.segment-icon {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  background: #e8f0fc;
-  color: #075cd6;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-.row-play {
-  margin-left: auto;
-  color: #075cd6;
+.recording-row:hover {
+  background: var(--surface-soft);
 }
 .recording-row[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
   background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+.segment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.segment-program {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--heading);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.segment-time-primary {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--heading);
+  line-height: 1.25;
+}
+.segment-time,
+.segment-duration {
+  font-size: 12px;
+  color: var(--muted);
+}
+.recording-row[aria-pressed="true"] .segment-program,
+.recording-row[aria-pressed="true"] .segment-time-primary {
+  color: var(--accent);
+}
+.row-play {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.recording-row:hover .row-play,
+.recording-row[aria-pressed="true"] .row-play {
+  color: var(--accent);
+  background: rgba(36, 89, 196, 0.1);
+}
+.empty-state-inline,
+.empty-filter {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+  padding: 16px 8px;
 }
 
-/* Sober, Flat Player Panel (No Gradient) */
+/* Broadcast Console Player Panel (DESIGN.md #17243B) */
 .player-panel {
-  background: #075cd6;
+  background: var(--nav);
   color: #fff;
-  padding: 24px;
+  padding: 20px 22px;
   border-radius: 6px;
+  border: 1px solid #243552;
   display: flex;
-  gap: 22px;
+  gap: 20px;
   align-items: center;
-  min-height: 196px;
   max-width: 100%;
   overflow: hidden;
 }
 .player-art {
   flex: none;
-  width: 136px;
-  height: 136px;
+  width: 108px;
+  height: 108px;
   display: grid;
   place-items: center;
-  color: #087ff0;
-  background: #102a50;
+  background: #101b2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -1360,50 +1539,71 @@ const nowPlayingArt = station.now_playing?.art || '';
 .player-art-icon {
   display: grid;
   place-items: center;
-  color: #087ff0;
+  color: #70adff;
 }
 .player-main {
   min-width: 0;
   max-width: 100%;
   flex: 1;
-  overflow: hidden;
 }
 .player-top {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
-  min-height: 32px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   flex-wrap: wrap;
 }
 .mode-badge {
-  background: #fff;
-  color: #102a50;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f0f4fa;
   border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 13px;
+  padding: 3px 9px;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
+}
+.mode-badge[data-mode="archive"] .live-dot {
+  background: #70adff;
+}
+.mode-badge[data-mode="paused"] .live-dot {
+  background: #94a3b8;
+}
+.mode-badge[data-mode="error"] .live-dot {
+  background: #f87171;
 }
 .go-live-btn {
-  border: 1px solid #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   color: #fff;
   background: transparent;
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 4px;
   font-size: 13px;
   font-weight: 600;
 }
 .go-live-btn:hover {
   background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.65);
 }
 .player-main h2 {
   color: #fff;
-  font-size: 28px;
-  margin: 4px 0;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  margin: 2px 0 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1411,16 +1611,16 @@ const nowPlayingArt = station.now_playing?.art || '';
 .player-subtitle-viewport {
   width: 100%;
   max-width: 100%;
-  height: 24px;
+  height: 22px;
   overflow: hidden;
   position: relative;
   margin: 0 0 14px;
 }
 .player-subtitle {
   margin: 0;
-  font-size: 15px;
-  line-height: 24px;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  line-height: 22px;
+  color: #c8d4e6;
   white-space: nowrap;
   display: inline-block;
   min-width: 100%;
@@ -1430,176 +1630,187 @@ const nowPlayingArt = station.now_playing?.art || '';
   animation: itunes-metadata-ticker var(--scroll-duration, 11s) ease-in-out infinite;
 }
 @keyframes itunes-metadata-ticker {
-  0%, 16% {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-  }
-  70%, 82% {
-    transform: translate3d(var(--scroll-offset, -120px), 0, 0);
-    opacity: 1;
-  }
-  85% {
-    transform: translate3d(var(--scroll-offset, -120px), -50%, 0);
-    opacity: 0;
-  }
-  85.1% {
-    transform: translate3d(0, 100%, 0);
-    opacity: 0;
-  }
-  96%, 100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-  }
+  0%, 16% { transform: translate3d(0, 0, 0); opacity: 1; }
+  70%, 82% { transform: translate3d(var(--scroll-offset, -120px), 0, 0); opacity: 1; }
+  85% { transform: translate3d(var(--scroll-offset, -120px), -50%, 0); opacity: 0; }
+  85.1% { transform: translate3d(0, 100%, 0); opacity: 0; }
+  96%, 100% { transform: translate3d(0, 0, 0); opacity: 1; }
 }
 
-/* Single-Row Sober Controls with Centered Interactive Scrubber */
+/* Controls Row */
 .custom-controls {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 18px;
   flex-wrap: wrap;
+}
+.transport-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.scrubber-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.utility-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .skip-btn,
 .icon-only-btn {
   border: 0;
   background: transparent;
-  color: #fff;
+  color: #e2e8f0;
   width: 38px;
   height: 38px;
   padding: 0;
   border-radius: 4px;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 .skip-btn:hover,
 .icon-only-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 .play-btn {
   border: 0;
   border-radius: 50%;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   background: #fff;
-  color: #075cd6;
+  color: var(--nav);
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 .play-btn:hover {
-  background: #f2f7ff;
+  background: #e8effc;
 }
-.custom-controls output {
-  font-size: 13px;
+.scrubber-group output {
+  font-size: 12px;
+  color: #cbd5e1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .custom-controls input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  height: 5px;
   border-radius: 999px;
-  background: #102a50;
-  accent-color: #fff;
   min-width: 0;
   cursor: pointer;
+}
+#play-progress {
+  flex: 1;
+  background: linear-gradient(to right, #3b82f6 var(--progress, 100%), rgba(255, 255, 255, 0.22) var(--progress, 100%));
+}
+#play-volume {
+  width: 68px;
+  background: linear-gradient(to right, #fff var(--vol, 100%), rgba(255, 255, 255, 0.22) var(--vol, 100%));
 }
 .custom-controls input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
   border: 0;
 }
 .custom-controls input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
   border: 0;
 }
-.custom-controls #play-progress {
-  width: 120px;
-  flex: 1;
-}
 .volume-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin-right: 4px;
 }
-.volume-control input[type="range"] {
-  width: 68px;
-}
-.player-error {
+.player-error,
+.player-main :global(.wireless-status) {
   margin: 10px 0 0;
   font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+.player-main :global(.wireless-status:empty) {
+  display: none;
+}
+.player-panel :is(button, input):focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
 }
 
-.recording-chips {
-  display: flex;
-  gap: 10px;
-  padding: 14px;
-  overflow-x: auto;
-}
-.recording-chips button {
-  white-space: nowrap;
-  min-height: 42px;
-}
-.recording-chips button[aria-pressed="true"] {
-  background: #e4efff;
-  color: #075cd6;
-  border-color: #075cd6;
-}
-
-/* Fixed-Layout Songs Table (No Horizontal Clipping) */
+/* Songs Table */
 .songs-table-wrap {
   padding: 0;
-  max-height: 440px;
+  max-height: 540px;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 .songs-panel :global(table) {
   width: 100%;
+  min-width: 580px;
   table-layout: fixed;
   border-collapse: collapse;
 }
-.songs-panel .col-time { width: 92px; }
+.songs-panel .col-time { width: 108px; }
 .songs-panel .col-title { width: auto; }
-.songs-panel .col-artist { width: 24%; }
-.songs-panel .col-duration { width: 76px; }
-.songs-panel .col-action { width: 138px; }
+.songs-panel .col-artist { width: 25%; }
+.songs-panel .col-duration { width: 78px; }
+.songs-panel .col-action { width: 146px; }
 
 .songs-panel :global(th) {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #eaf0f7;
+  background: var(--surface-soft);
   text-align: left;
   padding: 10px 14px;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
 }
 .songs-panel :global(td) {
   padding: 10px 14px;
-  color: #202c3d;
+  color: var(--text);
   font-size: 14px;
-  border-bottom: 1px solid #e6edf5;
+  border-bottom: 1px solid #eaedf2;
   vertical-align: middle;
+}
+.songs-panel :global(tbody tr:hover) {
+  background: var(--surface-soft);
 }
 .songs-panel :global(.song-time-cell) {
   white-space: nowrap;
+  color: var(--heading);
+  font-weight: 500;
 }
 .songs-panel :global(.song-live-pill) {
   display: inline-block;
   margin-left: 6px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   font-size: 11px;
   font-weight: 600;
-  border-radius: 4px;
-  background: #e8effc;
-  color: #075cd6;
+  border-radius: 3px;
+  background: var(--error-bg);
+  color: var(--error);
 }
 .songs-panel :global(.song-title-td) {
   min-width: 0;
@@ -1616,12 +1827,14 @@ const nowPlayingArt = station.now_playing?.art || '';
   white-space: nowrap;
   display: block;
   min-width: 0;
+  font-weight: 600;
+  color: var(--heading);
 }
 .songs-panel :global(.song-artist-td) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #4a5b73;
+  color: var(--muted);
 }
 .songs-panel :global(.song-thumb) {
   width: 32px;
@@ -1629,10 +1842,10 @@ const nowPlayingArt = station.now_playing?.art || '';
   border-radius: 4px;
   object-fit: cover;
   flex-shrink: 0;
+  border: 1px solid var(--border);
 }
 .songs-panel :global(.song-duration-cell) {
-  font-variant-numeric: tabular-nums;
-  color: #596a83;
+  color: var(--muted);
   white-space: nowrap;
 }
 .songs-panel :global(.song-action-td) {
@@ -1640,27 +1853,34 @@ const nowPlayingArt = station.now_playing?.art || '';
 }
 .songs-panel :global(.song-seek-btn) {
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 4px 9px;
   min-height: 30px;
+  gap: 6px;
 }
 .songs-panel :global(.no-archive-tag) {
   font-size: 13px;
-  color: #596a83;
+  color: var(--muted);
 }
 .songs-panel :global(.songs-empty-cell) {
-  padding: 24px 14px !important;
-  color: #596a83;
+  padding: 28px 14px !important;
+  color: var(--muted);
+  text-align: center;
 }
 
-/* Footer with high-contrast Brand wordmark */
+/* Footer */
 .radio-footer {
-  background: #102a50;
+  background: var(--nav);
   color: #fff;
+  margin-top: auto;
+}
+.radio-footer-inner {
+  width: min(100%, 1380px);
+  margin: 0 auto;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
-  gap: 30px;
-  padding: 20px 3%;
-  margin-top: 24px;
+  gap: 24px;
+  font-size: 14px;
 }
 .radio-footer :global(.brand),
 .radio-footer :global(.brand-name) {
@@ -1672,14 +1892,20 @@ const nowPlayingArt = station.now_playing?.art || '';
 .radio-footer :global(.brand-signature > span) {
   color: #c8d2e3;
 }
-.radio-footer > span:last-child {
-  margin-left: auto;
-  font-size: 14px;
+.footer-station {
+  color: #dbe4f0;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  padding-left: 20px;
 }
+.footer-tz {
+  margin-left: auto;
+  font-size: 13px;
+  color: #a8b7cc;
+}
+
 .mobile-radio-nav {
   display: none;
 }
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1692,62 +1918,55 @@ const nowPlayingArt = station.now_playing?.art || '';
   border: 0;
 }
 
-@media (max-width: 1100px) {
-  .radio-header {
-    gap: 16px;
+/* Tablet */
+@media (max-width: 1024px) {
+  .radio-header-inner {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
   }
   .radio-search {
-    display: none;
+    width: 100%;
   }
-  .radio-header nav {
-    gap: 14px;
-  }
-  .player-panel {
-    gap: 16px;
-    padding: 18px;
-  }
-  .player-art {
-    width: 112px;
-    height: 112px;
+  .radio-page {
+    padding: 18px 16px 28px;
   }
   .radio-layout {
-    grid-template-columns: minmax(260px, .85fr) minmax(0, 1.7fr);
+    grid-template-columns: 284px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .player-art {
+    width: 84px;
+    height: 84px;
+  }
+  .scrubber-group {
+    order: 2;
+    flex-basis: 100%;
   }
 }
 
+/* Mobile */
 @media (max-width: 760px) {
-  .radio-header {
-    padding: 12px 14px;
-    gap: 10px 14px;
-    flex-wrap: wrap;
-  }
-  .radio-header nav {
-    display: none;
+  .radio-header-brand {
+    width: 100%;
+    gap: 12px;
   }
   .radio-identity {
-    border: 0;
-    padding: 0;
-    min-width: 0;
-    flex: 1;
+    padding-left: 12px;
   }
   .radio-identity strong {
-    font-size: 15px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 16px;
   }
-  .radio-identity small {
-    display: none;
+  .radio-page {
+    padding: 16px 12px 24px;
   }
   .radio-layout {
     display: flex;
     flex-direction: column;
-    max-width: 100%;
+    gap: 16px;
   }
-  .radio-layout > *,
-  .radio-content {
+  .radio-layout > * {
     width: 100%;
-    max-width: 100%;
     min-width: 0;
   }
   .radio-content {
@@ -1755,46 +1974,35 @@ const nowPlayingArt = station.now_playing?.art || '';
   }
   .player-panel {
     padding: 16px;
-    gap: 12px;
+    gap: 14px;
     align-items: flex-start;
+    flex-wrap: wrap;
   }
   .player-art {
-    width: 68px;
-    height: 68px;
+    width: 64px;
+    height: 64px;
   }
-  .player-top {
-    gap: 8px;
-  }
-  .mode-badge {
-    font-size: 12px;
-    padding: 3px 8px;
-  }
-  .go-live-btn {
-    font-size: 12px;
-    padding: 4px 9px;
+  .player-main {
+    flex-basis: calc(100% - 78px);
   }
   .player-main h2 {
     font-size: 19px;
   }
-  .player-subtitle-viewport {
-    margin-bottom: 10px;
-  }
-  .player-subtitle {
-    font-size: 14px;
-  }
   .custom-controls {
-    gap: 8px;
-    margin-top: 10px;
     width: 100%;
-  }
-  .custom-controls #play-progress {
-    flex-basis: 100%;
-    width: 100%;
-    order: 2;
+    gap: 10px;
   }
   .volume-control {
     display: none;
   }
+  .radio-hours {
+    max-height: 400px;
+  }
+  .songs-panel :global(table) {
+    min-width: 0;
+  }
+  .songs-panel .col-time { width: 72px; }
+  .songs-panel .col-action { width: 124px; }
   .songs-panel .col-artist,
   .songs-panel :global(.song-artist-td),
   .songs-panel :global(th:nth-child(3)),
@@ -1803,16 +2011,21 @@ const nowPlayingArt = station.now_playing?.art || '';
   .songs-panel :global(th:nth-child(4)) {
     display: none;
   }
-  .radio-page {
-    padding: 20px 12px 32px;
+  .radio-footer-inner {
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    padding: 16px;
+  }
+  .footer-station {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .footer-tz {
+    margin-left: 0;
+    width: 100%;
   }
   .radio-footer {
-    margin-bottom: 65px;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .radio-footer > span:last-child {
-    margin-left: 0;
+    margin-bottom: calc(60px + env(safe-area-inset-bottom));
   }
   .mobile-radio-nav {
     position: fixed;
@@ -1821,17 +2034,25 @@ const nowPlayingArt = station.now_playing?.art || '';
     right: 0;
     display: flex;
     justify-content: space-around;
-    background: #fff;
-    border-top: 1px solid #d6dfea;
-    padding: 10px 0;
-    z-index: 10;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    z-index: 20;
   }
   .mobile-radio-nav a {
     display: grid;
     justify-items: center;
     gap: 3px;
     font-size: 11px;
-    color: #102a50;
+    font-weight: 600;
+    color: var(--heading);
+    min-width: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-subtitle.is-scrolling {
+    animation: none;
   }
 }
 </style>

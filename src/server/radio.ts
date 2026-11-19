@@ -236,9 +236,11 @@ export function isSystemOrAdTrack(title: string, artist: string): boolean {
   const t = title.trim();
   const a = artist.trim();
   if (!t) return true;
-  if (/(?:^|[_-])(?:pub|publicidad|comercial|jingle|spot|promo)(?:[_-]|$)/i.test(t)) return true;
-  if (/^(?:a\d{3,5}_|rrc[-_]|hth\d+|conexion|desconexion|temperaturaregional|temperatura|hora|1350\s*am|radio\s*riquelme)$/i.test(t)) return true;
-  if (/^(?:rrc|radio\s*riquelme)$/i.test(a) && (t.includes('_') || /1350/i.test(t))) return true;
+  if (/(?:^|[_-\s])(?:pub|publicidad|comercial|jingle|spot|promo|cuña|ofertas)(?:[_-\s]|$)/i.test(t)) return true;
+  if (/^(?:a\d{3,5}_|rrc[-_]|hth\d+|conexion|desconexion|temperaturaregional|temperatura|hora|1350\s*am|radio\s*riquelme)/i.test(t)) return true;
+  if (/radioriquelme/i.test(t)) return true;
+  if (/^(?:ca\d{2,4}|\d{1,4})$/i.test(a)) return true;
+  if (/^(?:rrc|radio\s*riquelme)$/i.test(a) && (t.includes('_') || /1350|coquimbo/i.test(t))) return true;
   if ((!a || /^unknown\s*artist$/i.test(a)) && (!t.includes(' ') || t.includes('_'))) return true;
   if (t.length > 45 && !t.includes(' ')) return true;
   return false;
