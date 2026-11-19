@@ -73,6 +73,9 @@ export const GET: APIRoute = async ({ params, url }) => {
       }),
       groups: grouped.map(group => ({
         id: group.id,
+        url: group.segments.length > 1
+          ? `${radioPath}emision.ogg?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(group.id)}`
+          : radioPath + group.segments[0].name,
         start: group.start,
         end: group.end,
         totalSeconds: Math.round(group.totalSeconds),

@@ -65,6 +65,10 @@ const formatSongDuration = (seconds: number) => {
   return `${mins}:${secs}`;
 };
 const radioPath = `/radio/${channel.id}/`;
+const groupAudioUrl = (item: typeof selections[number]) =>
+  item.segments.length > 1
+    ? `${radioPath}emision.ogg?fecha=${encodeURIComponent(date)}&grupo=${encodeURIComponent(item.id)}`
+    : radioPath + item.segments[0].name;
 const nowPlayingText = liveDisplay.title;
 const nowPlayingArt = station.now_playing?.art || '';
 const isOldestDay = date === days[days.length - 1];
@@ -156,7 +160,7 @@ const isNewestDay = date === days[0];
                     <button
                       type="button"
                       class="recording-row"
-                      data-radio-audio={radioPath + item.id}
+                      data-radio-audio={groupAudioUrl(item)}
                       data-radio-name={item.id}
                       data-radio-start={item.start}
                       data-radio-end={item.end}
@@ -435,7 +439,7 @@ const isNewestDay = date === days[0];
                       <button
                         type="button"
                         class="button small song-seek-btn"
-                        data-chip={radioPath + item.id}
+                        data-chip={groupAudioUrl(item)}
                       >
                         <Icon name="play" size={12}/>
                         <span>{timeRange(item.start, item.end)}</span>
@@ -512,8 +516,6 @@ const isNewestDay = date === days[0];
     type SegmentInfo = { name: string; url: string; start: number; end: number; dur: number };
 
     let activeIndex = -1;
-    let activeSegments: SegmentInfo[] = [];
-    let activeSegIndex = 0;
     let activeName = '';
     let pendingSeek: number | null = null;
     let isScrubbing = false;
@@ -571,49 +573,31 @@ const isNewestDay = date === days[0];
       }];
     }
 
-    function getSegmentDuration(segs: SegmentInfo[], segIdx: number, isActiveGroup: boolean): number {
-      if (isActiveGroup && segIdx === activeSegIndex && Number.isFinite(audio.duration) && audio.duration > 1) {
+    function getKnownDuration(index = activeIndex): number {
+      if (index === activeIndex && Number.isFinite(audio.duration) && audio.duration > 1) {
         return audio.duration;
       }
-      return Math.max(1, segs[segIdx]?.dur || 1);
-    }
-
-    function getKnownDuration(index = activeIndex): number {
-      const isActiveGroup = index === activeIndex;
-      const segs = isActiveGroup && activeSegments.length ? activeSegments : getGroupSegments(index);
-      if (!segs.length) return 0;
-      return segs.reduce((sum, _, i) => sum + getSegmentDuration(segs, i, isActiveGroup), 0);
-    }
-
-    function getSegmentOffsetStart(segs: SegmentInfo[], segIdx: number, isActiveGroup: boolean): number {
-      let total = 0;
-      for (let i = 0; i < segIdx && i < segs.length; i++) {
-        total += getSegmentDuration(segs, i, isActiveGroup);
+      const btn = choices[index];
+      if (btn) {
+        const declared = Number(btn.dataset.radioDuration) || 0;
+        if (declared > 0) return declared;
+        const start = Number(btn.dataset.radioStart) || 0;
+        const end = Number(btn.dataset.radioEnd) || 0;
+        if (end > start) return (end - start) / 1000;
       }
-      return total;
+      return 0;
     }
 
     function getGlobalCurrentTime(): number {
-      if (mode !== 'archive' || !activeSegments.length) return 0;
-      const base = getSegmentOffsetStart(activeSegments, activeSegIndex, true);
-      const local = pendingSeek !== null ? pendingSeek : (Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
-      return base + Math.max(0, local);
-    }
-
-    function resolveGlobalPosition(segs: SegmentInfo[], globalSec: number, isActiveGroup: boolean): { segIdx: number; localSec: number } {
-      let remaining = Math.max(0, globalSec);
-      for (let i = 0; i < segs.length; i++) {
-        const dur = getSegmentDuration(segs, i, isActiveGroup);
-        if (remaining < dur || i === segs.length - 1) {
-          return { segIdx: i, localSec: Math.max(0, Math.min(remaining, Math.max(0, dur - 0.5))) };
-        }
-        remaining -= dur;
-      }
-      return { segIdx: 0, localSec: 0 };
+      if (mode !== 'archive') return 0;
+      return pendingSeek !== null ? pendingSeek : (Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
     }
 
     function findGroupForRecording(urlOrName: string): { groupIndex: number; segOffsetStart: number } | null {
       for (let i = 0; i < choices.length; i++) {
+        if (choices[i].dataset.radioName === urlOrName || choices[i].dataset.radioAudio === urlOrName) {
+          return { groupIndex: i, segOffsetStart: 0 };
+        }
         const segs = getGroupSegments(i);
         let offset = 0;
         for (let j = 0; j < segs.length; j++) {
@@ -720,8 +704,6 @@ const isNewestDay = date === days[0];
     function switchToPresent(autoPlay = true) {
       mode = 'live';
       activeIndex = -1;
-      activeSegments = [];
-      activeSegIndex = 0;
       activeName = '';
       pendingSeek = null;
       audio.pause();
@@ -750,74 +732,21 @@ const isNewestDay = date === days[0];
       }
     }
 
-    function loadActiveSegment(segIdx: number, localOffset: number, shouldPlay = true) {
-      const seg = activeSegments[segIdx];
-      if (!seg) return;
-      activeSegIndex = segIdx;
-      activeName = seg.name;
-      const segDur = Math.max(1, seg.dur);
-      const clampedLocal = Math.max(0, Math.min(localOffset, Math.max(0, segDur - 0.5)));
-      pendingSeek = clampedLocal;
-
-      const totalDur = getKnownDuration();
-      const globalPos = getSegmentOffsetStart(activeSegments, segIdx, true) + clampedLocal;
-      if (totalDur > 0) {
-        playTime.textContent = `${clock(globalPos)} / ${clock(totalDur)}`;
-        setProgressValue((globalPos / totalDur) * 100);
-      }
-
-      const currentBase = (audio.getAttribute('src') || '').split('#')[0];
-      if (currentBase === seg.url && audio.readyState >= 1) {
-        try {
-          audio.currentTime = clampedLocal;
-          if (Math.abs(audio.currentTime - clampedLocal) <= 2) pendingSeek = null;
-        } catch {}
-        if (shouldPlay) {
-          void audio.play().catch(() => {
-            if (audio.error) error.hidden = false;
-          });
-        }
-      } else {
-        const fragment = clampedLocal > 0 ? `#t=${Math.floor(clampedLocal)}` : '';
-        audio.src = seg.url + fragment;
-        audio.load();
-        const onReady = () => {
-          if (pendingSeek !== null) {
-            try { audio.currentTime = pendingSeek; } catch {}
-          }
-          if (shouldPlay) {
-            void audio.play().catch(() => {
-              if (audio.error) error.hidden = false;
-            });
-          }
-        };
-        audio.addEventListener('loadedmetadata', onReady, { once: true });
-      }
-    }
-
-    function applySeekToAudio(globalTargetSec: number) {
-      if (!activeSegments.length) return;
-      const totalDur = getKnownDuration();
-      const clampedGlobal = totalDur > 0
-        ? Math.max(0, Math.min(globalTargetSec, Math.max(0, totalDur - 0.5)))
-        : Math.max(0, globalTargetSec);
-      const { segIdx, localSec } = resolveGlobalPosition(activeSegments, clampedGlobal, true);
-      if (segIdx !== activeSegIndex) {
-        loadActiveSegment(segIdx, localSec, true);
-        return;
-      }
-      pendingSeek = localSec;
+    function applySeekToAudio(targetSec: number) {
+      const dur = getKnownDuration();
+      const clamped = dur > 0 ? Math.max(0, Math.min(targetSec, Math.max(0, dur - 0.5))) : Math.max(0, targetSec);
+      pendingSeek = clamped;
       try {
         if (audio.readyState >= 1) {
-          audio.currentTime = localSec;
-          if (Math.abs(audio.currentTime - localSec) <= 2) {
+          audio.currentTime = clamped;
+          if (Math.abs(audio.currentTime - clamped) <= 2) {
             pendingSeek = null;
           }
         }
       } catch {}
-      if (totalDur > 0) {
-        playTime.textContent = `${clock(clampedGlobal)} / ${clock(totalDur)}`;
-        setProgressValue((clampedGlobal / totalDur) * 100);
+      if (dur > 0) {
+        playTime.textContent = `${clock(clamped)} / ${clock(dur)}`;
+        setProgressValue((clamped / dur) * 100);
       }
     }
 
@@ -825,22 +754,21 @@ const isNewestDay = date === days[0];
       if (index < 0 || !choices[index]) return;
       const button = choices[index];
       const baseAudioUrl = button.dataset.radioAudio || '';
-      const segs = getGroupSegments(index);
-      if (!baseAudioUrl || !segs.length) return;
+      if (!baseAudioUrl) return;
 
       mode = 'archive';
       activeIndex = index;
-      activeSegments = segs;
+      activeName = button.dataset.radioName || '';
 
-      const totalDur = getKnownDuration(index);
-      const targetGlobal = totalDur > 0
-        ? Math.max(0, Math.min(seekOffsetSeconds, Math.max(0, totalDur - 1)))
+      const dur = getKnownDuration(index);
+      const targetOffset = dur > 0
+        ? Math.max(0, Math.min(seekOffsetSeconds, Math.max(0, dur - 1)))
         : Math.max(0, seekOffsetSeconds);
-      const { segIdx, localSec } = resolveGlobalPosition(segs, targetGlobal, false);
+      pendingSeek = targetOffset;
 
       live.pause();
       error.hidden = true;
-      setBadgeState('Grabación', 'archive');
+      setBadgeState('Cargando…', 'archive');
       goLiveBtn.hidden = false;
 
       const dateText = button.dataset.radioDate || '';
@@ -854,9 +782,30 @@ const isNewestDay = date === days[0];
 
       setArtwork(customArt || liveTrackArt);
       progress.disabled = false;
+      playTime.textContent = `${clock(targetOffset)} / ${clock(dur)}`;
+      setProgressValue(dur > 0 ? (targetOffset / dur) * 100 : 0);
       updatePressedStates(baseAudioUrl);
 
-      loadActiveSegment(segIdx, localSec, true);
+      const currentBase = (audio.getAttribute('src') || '').split('#')[0];
+      if (currentBase === baseAudioUrl && audio.readyState >= 1) {
+        applySeekToAudio(targetOffset);
+        void audio.play().catch(() => {
+          if (audio.error) error.hidden = false;
+        });
+      } else {
+        const fragment = targetOffset > 0 ? `#t=${Math.floor(targetOffset)}` : '';
+        audio.src = baseAudioUrl + fragment;
+        audio.load();
+        const onReady = () => {
+          if (pendingSeek !== null) {
+            try { audio.currentTime = pendingSeek; } catch {}
+          }
+          void audio.play().catch(() => {
+            if (audio.error) error.hidden = false;
+          });
+        };
+        audio.addEventListener('loadedmetadata', onReady, { once: true });
+      }
     }
 
     audio.addEventListener('canplay', () => {
@@ -1088,9 +1037,7 @@ const isNewestDay = date === days[0];
       if (dur > 0) setProgressValue((cur / dur) * 100);
     });
     audio.addEventListener('ended', () => {
-      if (activeSegments.length && activeSegIndex + 1 < activeSegments.length) {
-        loadActiveSegment(activeSegIndex + 1, 0, true);
-      } else if (activeIndex >= 0 && activeIndex + 1 < choices.length) {
+      if (activeIndex >= 0 && activeIndex + 1 < choices.length) {
         playArchive(activeIndex + 1, 0);
       } else {
         switchToPresent(true);
@@ -1294,6 +1241,7 @@ const isNewestDay = date === days[0];
           const latestGroup = data.groups[data.groups.length - 1];
           const latestChoice = choices[choices.length - 1];
           if (latestChoice && Number(latestChoice.dataset.radioStart) === latestGroup.start) {
+            if (latestGroup.url) latestChoice.dataset.radioAudio = latestGroup.url;
             latestChoice.dataset.radioEnd = String(latestGroup.end);
             latestChoice.dataset.radioDuration = String(latestGroup.totalSeconds);
             latestChoice.dataset.radioTime = latestGroup.range;
@@ -1305,9 +1253,6 @@ const isNewestDay = date === days[0];
             if (durSmall) durSmall.textContent = durText;
             const timeSmall = latestChoice.querySelector('.segment-time');
             if (timeSmall) timeSmall.textContent = `${latestGroup.range} hrs · ${durText}`;
-            if (mode === 'archive' && activeIndex === choices.length - 1) {
-              activeSegments = latestGroup.segments;
-            }
           }
         }
         if (Array.isArray(data.songs)) {

@@ -73,6 +73,7 @@ function start(channel) {
   mkdirSync(path, { mode: 0o700 });
   const child = spawn('ffmpeg', [
     '-hide_banner', '-nostdin', '-loglevel', 'error',
+    '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_at_eof', '1', '-reconnect_delay_max', '5',
     '-rw_timeout', '15000000', '-analyzeduration', '2000000', '-protocol_whitelist', 'http,https,tcp,tls,crypto',
     '-i', channel.source_url, '-map', '0:a:0', '-vn', '-sn', '-dn', '-map_metadata', '-1',
     '-c:a', 'libopus', '-b:a', '82k', '-vbr', 'off', '-ar', '48000', '-ac', '2',
@@ -121,6 +122,17 @@ function purge(now) {
     for (const file of entries(directory)) {
       const recording = file.isFile() && recordingInfo(file.name);
       if (recording && radioDate(recording.start) < oldest) rmSync(join(directory, file.name), { force: true });
+    }
+  }
+  const mergedRoot = join(radioRoot, '.merged');
+  for (const chDir of entries(mergedRoot)) {
+    if (!chDir.isDirectory()) continue;
+    const fullDir = join(mergedRoot, chDir.name);
+    for (const file of entries(fullDir)) {
+      if (!file.isFile()) continue;
+      const fullPath = join(fullDir, file.name);
+      const st = statSync(fullPath, { throwIfNoEntry: false });
+      if (st && now - st.mtimeMs > 12 * 3_600_000) rmSync(fullPath, { force: true });
     }
   }
   lastPurge = now;
